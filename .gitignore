@@ -1,0 +1,11 @@
+.vercel
+.claude
+node_modules
+.env
+cloudflared
+cloudflared.exe
+cookies.txt
+*.bak
+*.bak2
+data/facturas.db
+{src,public,data

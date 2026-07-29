@@ -1,0 +1,16 @@
+{
+  "name": "facturas-alda-web",
+  "version": "1.0.0",
+  "description": "Portal de validación de facturas Alda Hotels",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.1",
+    "bcryptjs": "^2.4.3",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "node-fetch": "^2.7.0"
+  }
+}

@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Facturas Alda Hotels</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f1117;--surface:#1a1d27;--surface2:#21253a;--border:#2a2d3e;--text:#f9fafb;--text2:#9ca3af;--text3:#6b7280;--accent:#6366f1;--green:#10b981;--red:#ef4444;--yellow:#f59e0b;--orange:#f97316}
+body{font-family:'Helvetica Neue',Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;position:sticky;top:0;z-index:100}
+.header-left{display:flex;align-items:center;gap:16px}
+.logo-text{font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}
+.logo-sep{width:1px;height:20px;background:var(--border)}
+.header-title{font-size:13px;color:var(--text2)}
+.header-right{display:flex;align-items:center;gap:12px}
+.user-badge{font-size:12px;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 12px}
+.btn-icon{background:none;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px;transition:all .15s}
+.btn-icon:hover{border-color:var(--text3);color:var(--text)}
+.layout{display:flex;flex:1;overflow:hidden;height:calc(100vh - 56px)}
+.sidebar{width:320px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.sidebar-header{padding:16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.sidebar-title{font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.8px}
+.badge-count{background:var(--accent);color:#fff;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700}
+.filter-tabs{display:flex;padding:8px 12px;gap:4px;border-bottom:1px solid var(--border);flex-shrink:0}
+.tab{flex:1;text-align:center;padding:5px 8px;font-size:11px;font-weight:600;color:var(--text3);background:none;border:1px solid transparent;border-radius:6px;cursor:pointer;transition:all .15s;text-transform:uppercase;letter-spacing:.5px}
+.tab.active{background:var(--surface2);border-color:var(--border);color:var(--text)}
+.factura-list{overflow-y:auto;flex:1}
+.factura-item{padding:14px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.factura-item:hover{background:var(--surface2)}
+.factura-item.selected{background:var(--surface2);border-left:3px solid var(--accent)}
+.fi-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px}
+.fi-numero{font-size:13px;font-weight:600}
+.fi-fecha{font-size:11px;color:var(--text3)}
+.fi-proveedor{font-size:12px;color:var(--text2);margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fi-footer{display:flex;align-items:center;justify-content:space-between}
+.fi-importe{font-size:13px;font-weight:600}
+.fi-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px}
+.badge-pendiente{background:#451a03;color:#fed7aa}
+.badge-aprobada{background:#052e16;color:#bbf7d0}
+.badge-rechazada{background:#450a0a;color:#fecaca}
+.fi-hotel{font-size:11px;color:var(--text3);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;color:var(--text3);font-size:13px;gap:8px}
+.detail{flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:20px}
+.detail-empty{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--text3)}
+.detail-empty-icon{font-size:48px;opacity:.3}
+.detail-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.detail-numero{font-size:20px;font-weight:700}
+.detail-proveedor{font-size:14px;color:var(--text2);margin-top:2px}
+.detail-actions{display:flex;gap:8px;flex-shrink:0}
+.btn{padding:9px 18px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
+.btn-primary{background:var(--green);color:#fff}
+.btn-primary:hover{background:#059669}
+.btn-danger{background:var(--red);color:#fff}
+.btn-danger:hover{background:#dc2626}
+.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+.btn-secondary:hover{border-color:var(--text3)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.card-header{padding:12px 16px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px}
+.card-body{padding:16px}
+.datos-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.dato-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+.dato-valor{font-size:13px;font-weight:500}
+.dato-valor.importe{font-size:18px;font-weight:700;color:var(--green)}
+.errores{display:flex;flex-direction:column;gap:6px}
+.error-item{display:flex;align-items:flex-start;gap:8px;padding:8px 12px;border-radius:6px;font-size:12px}
+.error-grave{background:#3b0000;border-left:3px solid var(--red);color:#fca5a5}
+.error-leve{background:#3b2000;border-left:3px solid var(--yellow);color:#fcd34d}
+.input-hotel,.input-nota{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;padding:10px 12px;outline:none;transition:border-color .15s;font-family:inherit}
+.input-nota{resize:vertical;min-height:70px;font-size:13px}
+.input-hotel:focus,.input-nota:focus{border-color:var(--accent)}
+.pdf-frame{width:100%;height:600px;border:none;background:#222}
+.pdf-unavail{height:200px;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:13px;flex-direction:column;gap:8px}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:440px;max-width:90vw}
+.modal h3{font-size:16px;font-weight:600;margin-bottom:16px}
+.modal-actions{display:flex;gap:8px;margin-top:20px;justify-content:flex-end}
+.toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.success{background:#052e16;border:1px solid var(--green);color:#bbf7d0}
+.toast.error{background:#450a0a;border:1px solid var(--red);color:#fecaca}
+.toast.show{opacity:1}
+.form-label{display:block;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+input[type=text],input[type=password],select{width:100%;padding:9px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:8px;outline:none}
+input[type=text]:focus,input[type=password]:focus,select:focus{border-color:var(--accent)}
+select option{background:var(--surface)}
+.admin-user-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)}
+.admin-user-name{flex:1;font-size:13px}
+.admin-user-rol{font-size:11px;color:var(--text3);background:var(--surface2);padding:2px 8px;border-radius:10px}
+.btn-sm{padding:4px 10px;font-size:11px;border-radius:6px}
+</style>
+</head>
+<body>
+<div class="toast" id="toast"></div>
+
+<header>
+  <div class="header-left">
+    <span class="logo-text">Alda Hotels</span>
+    <div class="logo-sep"></div>
+    <span class="header-title">Validación de Facturas</span>
+  </div>
+  <div class="header-right">
+    <span class="user-badge" id="userBadge">—</span>
+    <button class="btn-icon" id="btnAdmin" style="display:none" onclick="openAdmin()">⚙ Usuarios</button>
+    <button class="btn-icon" onclick="logout()">Salir</button>
+  </div>
+</header>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">Facturas</span>
+      <span class="badge-count" id="badgePendientes">0</span>
+    </div>
+    <div class="filter-tabs">
+      <button class="tab active" onclick="setFiltro('pendiente',this)">Pendientes</button>
+      <button class="tab" onclick="setFiltro('aprobada',this)">Aprobadas</button>
+      <button class="tab" onclick="setFiltro('rechazada',this)">Rechazadas</button>
+      <button class="tab" onclick="setFiltro('all',this)">Todas</button>
+    </div>
+    <div style="padding:8px 12px;border-bottom:1px solid var(--border)">
+      <!-- ponytail: señuelo para que Chrome autorrellene esto (no el buscador) con la credencial guardada del login -->
+      <input type="text" name="username" autocomplete="username" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px">
+      <input type="password" name="password" autocomplete="current-password" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px">
+      <input type="search" id="inputBuscar" name="busqueda-facturas" autocomplete="off" placeholder="Buscar por proveedor, nº factura, hotel..." oninput="onBuscarInput()" style="width:100%;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;outline:none">
+    </div>
+    <div class="factura-list" id="listaFacturas">
+      <div class="empty-state"><div>📄</div>Cargando...</div>
+    </div>
+  </div>
+
+  <div class="detail" id="detail">
+    <div class="detail-empty">
+      <div class="detail-empty-icon">📋</div>
+      <div>Selecciona una factura para revisarla</div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal aprobar -->
+<div class="modal-overlay" id="modalAprobar">
+  <div class="modal">
+    <h3>✓ Aprobar factura</h3>
+    <label class="form-label">Hotel / DocuWare (editable)</label>
+    <select class="input-hotel" id="inputHotel"></select>
+    <label class="form-label" style="margin-top:8px">Forma de pago DocuWare (editable)</label>
+    <input type="text" class="input-hotel" id="inputFpago" placeholder="Código de forma de pago (00-05)">
+    <label class="form-label" style="margin-top:8px">Nota del revisor (opcional)</label>
+    <textarea class="input-nota" id="inputNotaAprobar" placeholder="Comentario..."></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('modalAprobar')">Cancelar</button>
+      <button class="btn btn-primary" id="btnConfAprobar" onclick="confirmarAprobar()">Confirmar y enviar a DocuWare</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal rechazar -->
+<div class="modal-overlay" id="modalRechazar">
+  <div class="modal">
+    <h3>✗ Rechazar factura</h3>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:16px">La factura quedará marcada como rechazada.</p>
+    <label class="form-label">Motivo (opcional)</label>
+    <textarea class="input-nota" id="inputNotaRechazar" placeholder="Explica el motivo..."></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('modalRechazar')">Cancelar</button>
+      <button class="btn btn-danger" onclick="confirmarRechazar()">Rechazar factura</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal admin -->
+<div class="modal-overlay" id="modalAdmin">
+  <div class="modal" style="width:520px">
+    <h3>⚙ Gestión de usuarios</h3>
+    <div id="listaUsuarios" style="margin-bottom:20px;max-height:240px;overflow-y:auto"></div>
+    <div style="border-top:1px solid var(--border);padding-top:16px">
+      <p style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:12px">Nuevo usuario</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><label class="form-label">Nombre</label><input type="text" id="newNombre"></div>
+        <div><label class="form-label">Usuario</label><input type="text" id="newUsername"></div>
+        <div><label class="form-label">Contraseña</label><input type="password" id="newPassword"></div>
+        <div><label class="form-label">Rol</label><select id="newRol"><option value="revisor">Revisor</option><option value="admin">Admin</option></select></div>
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="crearUsuario()">Crear usuario</button>
+    </div>
+    <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal('modalAdmin')">Cerrar</button></div>
+  </div>
+</div>
+
+<script>
+// ponytail: lista estática de hoteles/sociedades DocuWare (misma fuente que usa n8n) —
+// evita que el revisor tenga que escribir a mano el "código. Nombre" exacto
+const HOTELES={"012":"Coste General Consultores Hoteleros Integrales S.L","100":"Coste General Alda Compostela S.L","101":"Alda O Fogar de Teodomiro","102":"Alda Casco Antiguo","103":"Alda Centro León","106":"Hotel Alda Algalia","107":"Alda Barrio Húmedo","108":"Lucus","109":"Alda San Carlos","110":"Alda Pilgrim León","111":"Alda Catedral","112":"Alda Avenida","113":"Alda Vía León","114":"Alda Bonaval","115":"Alda San Bieito","116":"Alda Camiño Inglés","117":"Alda Vía de la Plata Rooms","118":"Alda Fogar Natural","119":"Alda Pilgrim Astorga","200":"Coste General Alda Castilla S.L","201":"Alda Entrearcos","202":"Alda Centro Palencia","203":"Alda Fogar Natural","204":"Alda Cardeña","205":"Alda Palencia Plaza","206":"Alda Centro Ponferrada","207":"Alda Ciudad de Soria","208":"Alda Estella","209":"Alda Río Duero","210":"Alda Centro Zaragoza","211":"Alda Jolio Jaca","213":"Alda Pilgrim Ponferrada","214":"Alda Centro Pamplona","215":"Alda Zaragoza Independencia","216":"Alda Mercado de Zamora","217":"Alda Río Tormes","218":"Alda Ciudad de Toro","219":"Alda Castillo de Olite","220":"Alda Malvasía","221":"Alda Route 42","222":"Alda Mirador del Moncayo","223":"Alda Puerto Seco","224":"Alda Valladolid Sur","225":"Zeta Students Burgos","226":"Alda Centro Zamora","227":"Alda Soria Rooms","228":"Apartamentos Alda Palencia Catedral","229":"Alda Peñafiel","230":"Alda Posada de Egues","231":"Alda Triskel","232":"Alda Nueva Castilla","233":"Alda El Espinar","234":"Alda Guijuelo","235":"Alda A Boira","236":"Alda Plaza Mayor Toro","237":"Alda Ruta Castilla","238":"Alda Ciudad de Corella","300":"Coste General Alda Rias Baixas S.L","301":"Alda Bueumar","302":"Alda Estación Vigo","303":"Alda Puerta del Sol","304":"Alda Porta do Sol","305":"Alda Estación Pontevedra","306":"Alda Estación Ourense","307":"Alda Santa Tecla","308":"Alda Vía Norte","309":"Alda Lalín","310":"Alda Palas de Rei","312":"Alda Centro Pontevedra","313":"Alda Carril","314":"Alda Castelao","315":"Alda Boiro","316":"Alda Barraña Playa","317":"Apartamentos Alda O Grove","318":"Alda Alpina","319":"Alda Ribeira","320":"Alda Xinzo","321":"Alda Altiana","400":"Coste General Hoteles Rias Altas S.L","401":"Alda Puerta Coruña","402":"Alda Santa Cristina","403":"Alda Sada Marina","404":"Apartamentos Alda Santa Cristina","405":"Alda El Suizo","406":"Hotel Agüera","407":"Alda Palacio Valdés","408":"Alda Galería Coruña","409":"Alda Pasaje","410":"Alda Centro Oviedo","411":"Alda Estación Oviedo","412":"Alda Miramar","413":"Alda Orzán","414":"Alda Alborán Rooms","415":"Alda Don Carlos","416":"Hotel Coruñamar","417":"Alda Puerto Calderón","418":"Alda Cabanas Playa","419":"Alda Fogar do Mariñeiro","420":"Alda Triacastela","421":"Alda Cabanas Nature","422":"Alda Narón","423":"Alda Carballo","424":"Alda Corcubión","425":"Alda Arteixo","500":"Coste General Alda Hostels Hostelería S.L","501":"Garfo Sta. Trega","502":"Garfo Puerto Seco","503":"Garfo Cocina Central","504":"Coffe Bakers Orzán","505":"Garfo Sada","506":"Garfo Carril","507":"Garfo Cabanas","600":"Coste general Obedientrophy Unipessoal Lda","601":"Valença do Minho","700":"Coste general Alda Hotels Bavaro","701":"Alda Bavaro","800":"Coste general Restauradores de Comida Atlántica S.L","801":"Taberna Central","802":"A Nosa Taberna Corrubedo","803":"A Nosa Taberna Coruña","804":"A Nosa Taberna Compostela","805":"A Nosa Taberna Carril","806":"Alda Corrubedo","807":"A Nosa Taberna Palas de Rei","900":"Costes Generales Niuco Homes S.L","901":"IH Ciudad de Valladolid","902":"IH Ciudad del Cine","903":"IH Ciudad de Avilés","904":"IH Felipe Prieto","905":"IH Fogar Natural","906":"IH Santa Crisitina","907":"IH Porta do Sol","908":"IH Palencia Catedral"};
+
+let facturas=[], facturaActual=null, filtroActual='pendiente', me=null;
+let offset=0, total=0, busqueda='', buscarTimer=null;
+const PAGE=50;
+
+// La sesión puede expirar (ej. redeploy del servidor) — si cualquier fetch devuelve 401,
+// manda al login en vez de dejar que la página se quede mostrando listas vacías en silencio.
+const _fetch=window.fetch;
+window.fetch=async(...args)=>{
+  const r=await _fetch(...args);
+  if(r.status===401 && !args[0].includes('/api/login')){ window.location.href='/login'; throw new Error('Sesión expirada'); }
+  return r;
+};
+
+// Escapa HTML para cualquier valor que venga del email/factura/proveedor antes de
+// meterlo en innerHTML — sin esto, un proveedor podía inyectar JS vía el nombre,
+// concepto, asunto, etc. y ejecutarlo en la sesión de un admin autenticado.
+function esc(s){return s==null?'':String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+async function init(){
+  me=await fetch('/api/me').then(r=>r.json());
+  document.getElementById('userBadge').textContent=me.nombre;
+  if(me.rol==='admin') document.getElementById('btnAdmin').style.display='';
+  await cargarFacturas();
+  setInterval(cargarFacturas,30000);
+}
+
+let facturasReqId=0;
+async function cargarFacturas(reset=true){
+  if(reset) offset=0;
+  const params=new URLSearchParams({offset,limit:PAGE});
+  if(filtroActual!=='all') params.set('estado',filtroActual);
+  if(busqueda) params.set('q',busqueda);
+  // Cambiar de pestaña rápido dispara varias fetch en paralelo — sin esto, una
+  // respuesta más lenta de una carga anterior podía llegar después y pisar la
+  // lista con datos de otro filtro (ej. mostrar "rechazadas" bajo la pestaña "aprobadas").
+  const reqId=++facturasReqId;
+  const {items,total:t}=await fetch(`/api/facturas?${params}`).then(r=>r.json()).catch(()=>({items:[],total:0}));
+  if(reqId!==facturasReqId) return;
+  facturas = reset ? items : facturas.concat(items);
+  total=t;
+  const stats=await fetch('/api/stats').then(r=>r.json()).catch(()=>({}));
+  if(reqId!==facturasReqId) return;
+  document.getElementById('badgePendientes').textContent=stats.pendientes||0;
+  renderLista();
+  if(facturaActual){const u=facturas.find(f=>f.id===facturaActual.id);if(u)renderDetail(u);}
+}
+
+function cargarMas(){offset+=PAGE;cargarFacturas(false);}
+
+function onBuscarInput(){
+  clearTimeout(buscarTimer);
+  buscarTimer=setTimeout(()=>{busqueda=document.getElementById('inputBuscar').value.trim();cargarFacturas();},300);
+}
+
+function setFiltro(f,el){
+  filtroActual=f;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  facturaActual=null;
+  document.getElementById('detail').innerHTML='<div class="detail-empty"><div class="detail-empty-icon">📋</div><div>Selecciona una factura</div></div>';
+  cargarFacturas();
+}
+
+function renderLista(){
+  const el=document.getElementById('listaFacturas');
+  if(!facturas.length){el.innerHTML=`<div class="empty-state"><div>✓</div>No hay facturas ${filtroActual==='pendiente'?'pendientes':''}</div>`;return;}
+  el.innerHTML=facturas.map(f=>`
+    <div class="factura-item${facturaActual?.id===f.id?' selected':''}" onclick="seleccionar(${f.id})">
+      <div class="fi-header"><span class="fi-numero">${esc(f.factura_numero)||'Sin número'}</span><span class="fi-fecha">${fmtDate(f.created_at)}</span></div>
+      <div class="fi-proveedor">${esc(f.proveedor_nombre)||'—'}</div>
+      <div class="fi-footer"><span class="fi-importe">${f.importe_total?Number(f.importe_total).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</span><span class="fi-badge badge-${f.estado}">${f.estado}</span></div>
+      <div class="fi-hotel">→ ${esc(f.hotel_nombre_editado||f.hotel_nombre_odoo)||'Sin identificar'}</div>
+    </div>`).join('')
+    + (facturas.length<total?`<div style="padding:12px;text-align:center"><button class="btn btn-secondary btn-sm" onclick="cargarMas()">Cargar más (${facturas.length}/${total})</button></div>`:'');
+}
+
+async function seleccionar(id){
+  facturaActual=facturas.find(f=>f.id===id)||await fetch(`/api/facturas/${id}`).then(r=>r.json());
+  renderLista();
+  renderDetail(facturaActual);
+}
+
+function renderDetail(f){
+  const isPendiente=f.estado==='pendiente';
+  const eg=Array.isArray(f.errores_graves)?f.errores_graves:[];
+  const el=Array.isArray(f.errores_leves)?f.errores_leves:[];
+  const motivoMap={'factura_dirigida_a_sociedad':'📋 Factura dirigida a sociedad — requiere imputación manual','multiples_centros':'🏨 Múltiples centros detectados','costes_generales_posible_hotel':'🔍 Posible hotel no identificado correctamente'};
+  const motivoTxt=motivoMap[f.motivo_revision]||'';
+  document.getElementById('detail').innerHTML=`
+    <div class="detail-header">
+      <div>
+        <div class="detail-numero">${esc(f.factura_numero)||'Sin número'}${f.estado!=='pendiente'?` <span class="fi-badge badge-${f.estado}" style="font-size:12px;margin-left:8px">${f.estado}</span>`:''}</div>
+        <div class="detail-proveedor">${esc(f.proveedor_nombre)||'—'}${f.proveedor_cif?' · '+esc(f.proveedor_cif):''}</div>
+      </div>
+      ${isPendiente?`<div class="detail-actions"><button class="btn btn-danger" onclick="openRechazar()">✗ Rechazar</button><button class="btn btn-primary" onclick="openAprobar()">✓ Aprobar</button></div>`:`<div style="font-size:12px;color:var(--text3)">Revisada por ${esc(f.revisor_nombre)||'—'}<br>${fmtDate(f.revisado_at)}</div>`}
+    </div>
+    ${motivoTxt?`<div style="background:#2a1f00;border:1px solid #78350f;border-radius:8px;padding:12px 16px;font-size:13px;color:#fcd34d">${motivoTxt}</div>`:''}
+    ${eg.length||el.length?`<div class="card"><div class="card-header">Incidencias detectadas</div><div class="card-body"><div class="errores">${eg.map(e=>`<div class="error-item error-grave">🔴 ${esc(e)}</div>`).join('')}${el.map(e=>`<div class="error-item error-leve">🟡 ${esc(e)}</div>`).join('')}</div></div></div>`:''}
+    <div class="card"><div class="card-header">Datos de la factura</div><div class="card-body">
+      <div class="datos-grid">
+        <div><div class="dato-label">Nº Factura</div><div class="dato-valor">${esc(f.factura_numero)||'—'}</div></div>
+        <div><div class="dato-label">Fecha</div><div class="dato-valor">${esc(f.factura_fecha)||'—'}</div></div>
+        <div><div class="dato-label">Importe total</div><div class="dato-valor importe">${f.importe_total?Number(f.importe_total).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</div></div>
+        <div><div class="dato-label">Base imponible</div><div class="dato-valor">${f.base_imponible?Number(f.base_imponible).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</div></div>
+        <div><div class="dato-label">Forma de pago</div><div class="dato-valor">${esc(f.forma_pago_detalle)||'—'}</div></div>
+        <div><div class="dato-label">Recibida</div><div class="dato-valor">${fmtDate(f.created_at)}</div></div>
+      </div>
+      ${f.concepto?`<div style="margin-top:12px"><div class="dato-label">Concepto</div><div class="dato-valor" style="font-size:12px;line-height:1.5;color:var(--text2)">${esc(f.concepto)}</div></div>`:''}
+    </div></div>
+    <div class="card"><div class="card-header">Hotel / DocuWare</div><div class="card-body">
+      <div class="datos-grid">
+        <div><div class="dato-label">Identificado como</div><div class="dato-valor">${esc(f.hotel_nombre_odoo)||'No identificado'}</div></div>
+        <div><div class="dato-label">Código hotel</div><div class="dato-valor">${esc(f.codigo_hotel)||'—'}</div></div>
+        <div><div class="dato-label">Sociedad</div><div class="dato-valor">${esc(f.sociedad)||'—'}</div></div>
+        <div><div class="dato-label">DocuWare hotel</div><div class="dato-valor">${esc(f.hotel_nombre_editado||f.dw_hotel)||'PENDIENTE'}</div></div>
+        <div><div class="dato-label">Forma de pago DW</div><div class="dato-valor">${esc(f.dw_fpago_editado||f.dw_fpago)||'—'}</div></div>
+      </div>
+      ${f.nota_revisor?`<div style="margin-top:12px"><div class="dato-label">Nota del revisor</div><div class="dato-valor" style="font-size:12px;color:var(--text2)">${esc(f.nota_revisor)}</div></div>`:''}
+    </div></div>
+    <div class="card"><div class="card-header">Email de origen</div><div class="card-body">
+      <div class="datos-grid">
+        <div><div class="dato-label">Remitente</div><div class="dato-valor" style="font-size:12px">${esc(f.email_remitente)||'—'}</div></div>
+        <div><div class="dato-label">Archivo</div><div class="dato-valor" style="font-size:12px">${esc(f.detected_pdf_name)||'—'}</div></div>
+      </div>
+      ${f.asunto_email?`<div style="margin-top:8px"><div class="dato-label">Asunto</div><div class="dato-valor" style="font-size:12px;color:var(--text2)">${esc(f.asunto_email)}</div></div>`:''}
+    </div></div>
+    <div class="card"><div class="card-header">Factura PDF</div>
+      ${f.pdf_filename?`<iframe class="pdf-frame" src="/api/facturas/${f.id}/pdf"></iframe>`:renderPdfFaltante(f)}
+    </div>`;
+}
+
+function renderPdfFaltante(f){
+  const enlaces=[f.enlace_descarga,...(Array.isArray(f.enlaces_detectados)?f.enlaces_detectados:[])].filter(Boolean);
+  // Solo http(s) como href — evita que un enlace "detectado" con esquema javascript: se ejecute al clicar.
+  const links=[...new Set(enlaces)].map(u=>/^https?:\/\//i.test(u)?`<a href="${esc(u)}" target="_blank" rel="noopener" style="color:var(--accent);word-break:break-all;font-size:12px;display:block;margin-bottom:4px">${esc(u)}</a>`:`<div style="color:var(--text3);word-break:break-all;font-size:12px;margin-bottom:4px">${esc(u)}</div>`).join('');
+  const puedeSubir=f.estado==='pendiente';
+  return `<div class="pdf-unavail" style="height:auto;padding:20px;gap:10px">
+    <div>📄 ${f.solo_enlace?'Esta factura no llegó con PDF adjunto, solo enlace(s) de descarga.':'PDF no disponible.'}</div>
+    ${links?`<div style="width:100%;text-align:left">${links}</div>`:''}
+    ${puedeSubir?`<div style="width:100%;text-align:left;margin-top:8px">
+      <label class="form-label">Descarga el PDF del enlace y súbelo aquí para poder aprobar</label>
+      <input type="file" accept="application/pdf" id="inputSubirPdf" style="width:100%;font-size:12px;color:var(--text2);margin-bottom:8px">
+      <button class="btn btn-secondary btn-sm" onclick="subirPdf(${f.id})">Subir PDF</button>
+    </div>`:''}
+  </div>`;
+}
+
+async function subirPdf(id){
+  const input=document.getElementById('inputSubirPdf');
+  const file=input?.files?.[0];
+  if(!file){toast('Selecciona un archivo PDF','error');return;}
+  const b64=await new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result.split(',')[1]);
+    reader.onerror=reject;
+    reader.readAsDataURL(file);
+  });
+  const r=await fetch(`/api/facturas/${id}/pdf-upload`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pdf_base64:b64,filename:file.name})});
+  const d=await r.json();
+  if(r.ok){toast('PDF subido','success');facturaActual=await fetch(`/api/facturas/${id}`).then(x=>x.json());renderDetail(facturaActual);}
+  else toast('Error: '+d.error,'error');
+}
+
+function openAprobar(){
+  if(!facturaActual)return;
+  if(!facturaActual.pdf_filename){toast('Esta factura no tiene PDF. Súbelo antes de aprobar.','error');return;}
+  const actual=facturaActual.hotel_nombre_editado||facturaActual.dw_hotel||'';
+  const opciones=Object.entries(HOTELES).sort((a,b)=>a[1].localeCompare(b[1])).map(([cod,nom])=>`${cod}. ${nom}`);
+  if(actual && !opciones.includes(actual)) opciones.unshift(actual);
+  document.getElementById('inputHotel').innerHTML=opciones.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join('');
+  document.getElementById('inputHotel').value=actual;
+  document.getElementById('inputFpago').value=facturaActual.dw_fpago_editado||facturaActual.dw_fpago||'';
+  document.getElementById('inputNotaAprobar').value='';
+  document.getElementById('modalAprobar').classList.add('open');
+}
+function openRechazar(){document.getElementById('inputNotaRechazar').value='';document.getElementById('modalRechazar').classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+
+async function confirmarAprobar(){
+  const btn=document.getElementById('btnConfAprobar');
+  btn.disabled=true;btn.textContent='Enviando...';
+  const r=await fetch(`/api/facturas/${facturaActual.id}/aprobar`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hotel_nombre_editado:document.getElementById('inputHotel').value,dw_fpago_editado:document.getElementById('inputFpago').value,nota_revisor:document.getElementById('inputNotaAprobar').value})});
+  const d=await r.json();
+  btn.disabled=false;btn.textContent='Confirmar y enviar a DocuWare';
+  closeModal('modalAprobar');
+  if(r.ok){toast('✓ '+(d.mensaje||'Factura aprobada'),'success');facturaActual=null;await cargarFacturas();document.getElementById('detail').innerHTML='<div class="detail-empty"><div class="detail-empty-icon">✓</div><div>Factura procesada</div></div>';}
+  else toast('Error: '+d.error,'error');
+}
+
+async function confirmarRechazar(){
+  const r=await fetch(`/api/facturas/${facturaActual.id}/rechazar`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nota_revisor:document.getElementById('inputNotaRechazar').value})});
+  const d=await r.json();
+  closeModal('modalRechazar');
+  if(r.ok){toast('Factura rechazada','success');facturaActual=null;await cargarFacturas();document.getElementById('detail').innerHTML='<div class="detail-empty"><div class="detail-empty-icon">✗</div><div>Factura rechazada</div></div>';}
+  else toast('Error: '+d.error,'error');
+}
+
+async function openAdmin(){await cargarUsuarios();document.getElementById('modalAdmin').classList.add('open');}
+async function cargarUsuarios(){
+  const us=await fetch('/api/usuarios').then(r=>r.json());
+  document.getElementById('listaUsuarios').innerHTML=us.map(u=>`<div class="admin-user-row"><div class="admin-user-name"><strong>${esc(u.nombre)}</strong><span style="color:var(--text3);font-size:11px;margin-left:8px">@${esc(u.username)}</span></div><span class="admin-user-rol">${esc(u.rol)}</span>${u.rol!=='admin'?`<button class="btn btn-danger btn-sm" onclick="eliminarUsuario(${u.id})">Eliminar</button>`:''}</div>`).join('');
+}
+async function crearUsuario(){
+  const r=await fetch('/api/usuarios',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:document.getElementById('newNombre').value,username:document.getElementById('newUsername').value,password:document.getElementById('newPassword').value,rol:document.getElementById('newRol').value})});
+  const d=await r.json();
+  if(r.ok){toast('Usuario creado','success');document.getElementById('newNombre').value='';document.getElementById('newUsername').value='';document.getElementById('newPassword').value='';await cargarUsuarios();}
+  else toast(d.error,'error');
+}
+async function eliminarUsuario(id){if(!confirm('¿Eliminar usuario?'))return;await fetch(`/api/usuarios/${id}`,{method:'DELETE'});await cargarUsuarios();}
+async function logout(){await fetch('/api/logout',{method:'POST'});window.location.href='/login';}
+function fmtDate(dt){if(!dt)return'—';return new Date(dt).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}
+function toast(msg,type='success'){const el=document.getElementById('toast');el.textContent=msg;el.className=`toast ${type} show`;setTimeout(()=>el.classList.remove('show'),3500);}
+document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
+init();
+</script>
+</body>
+</html>

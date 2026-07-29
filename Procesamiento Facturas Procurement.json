@@ -1,0 +1,2675 @@
+{
+  "name": "Procesamiento Facturas Procurement",
+  "nodes": [
+    {
+      "parameters": {
+        "downloadAttachments": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.1,
+      "position": [
+        14464,
+        944
+      ],
+      "id": "40a83bfc-895d-4331-823d-17a0bcf6e97c",
+      "name": "Email Trigger (IMAP)1",
+      "credentials": {
+        "imap": {
+          "id": "c9XAIrj3jugRLnA0",
+          "name": "IMAP facturasproveedores"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "binaryToPropery",
+        "binaryPropertyName": "attachment_0",
+        "destinationKey": "attachment_0",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        16928,
+        752
+      ],
+      "id": "0a6bded5-5d63-4b14-9b84-cf4ecd4d5096",
+      "name": "PDF_To_Base64"
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "pdf_final",
+        "name": "={{ 'FAC_' + ($('Build_HTML_Centros').item.json.factura_numero || 'SIN_NUM').replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now() + '.pdf' }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "root"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        19840,
+        672
+      ],
+      "id": "ef777945-3336-42d9-ba67-88efd1e87175",
+      "name": "Drive_Subir_PDF",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "SYR4s3iHTJhLqkPj",
+          "name": "Google Drive account 3"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// =====================================================================\n// Build_Gemini_Payload  (versión mejorada)\n// Cambio clave: la IA EXTRAE direcciones estructuradas (instalación vs\n// fiscal por separado). El match al hotel lo hace el nodo determinista\n// \"Match_Hotel_Determinista\" que va justo después. La IA solo da una\n// PISTA (codigo_hotel_ia) que se usa para reconciliar, no como verdad.\n// =====================================================================\n\nlet pdfBase64 = $input.item.json?.attachment_0 || $input.item.json?.pdf_base64 || '';\nif (!pdfBase64) {\n  throw new Error('No se obtuvo base64 del PDF. JSON keys: ' + Object.keys($input.item.json || {}).join(', '));\n}\n\n// Lista de hoteles (solo como contexto/pista para la IA — NO es la autoridad)\nlet hotelesLista = '';\ntry {\n  const hoteles = $('Code_Hoteles_JSON').first().json.hoteles_odoo || [];\n  const EXCLUIR = ['costes generales', 'coste general', 'garfo', 'taberna', 'niuco', 'restauradores', 'gestion proyectos'];\n  // Code_Hoteles_JSON viene de Clean_Address: codigo_hotel / direccion_odoo / nombre_limpio / sociedad\n  // (con fallback a los nombres crudos de Odoo por compatibilidad)\n  const hotelesReales = hoteles.filter(h => {\n    const n = (h.nombre_completo || h.nombre_limpio || h.name || '').toLowerCase();\n    const cod = h.codigo_hotel || h.pms_property_code;\n    const dir = h.direccion_odoo || h.contact_address_complete;\n    return !EXCLUIR.some(e => n.includes(e)) && cod && dir;\n  });\n  hotelesLista = hotelesReales.map(h => {\n    const cod = h.codigo_hotel || h.pms_property_code;\n    const nom = h.nombre_limpio || h.nombre_completo || h.name;\n    const dir = h.direccion_odoo || h.contact_address_complete;\n    const soc = h.sociedad || (Array.isArray(h.company_id) ? h.company_id[1] : '') || '';\n    return `${cod}|${nom}|${dir}|${soc}`;\n  }).join('\\n');\n} catch (e) {}\n\nconst PROMPT = `Eres un analista de facturas del sector hotelero español (ALDA HOTELS).\nTienes DOS trabajos: (1) extraer los datos de la factura con precisión, y (2)\nIDENTIFICAR a qué hotel de la lista corresponde. Eres tú quien decide el hotel:\nrazona sobre el nombre del hotel si aparece, la dirección de instalación/suministro\ny la dirección fiscal, y elige el mejor candidato de la lista.\n\n============================================================\nREGLA CRÍTICA — DIRECCIÓN DE INSTALACIÓN vs DIRECCIÓN FISCAL\n============================================================\nUna factura suele tener DOS direcciones del cliente y NO son lo mismo:\n\n  • DIRECCIÓN FISCAL / SOCIEDAD: el domicilio social de la empresa que recibe la\n    factura (ej. \"ALDA COMPOSTELA, SL — Pz. de la Algalia de Arriba 3, 15704\n    Santiago\"). Suele ir arriba, en negrita, junto al NIF. NO indica dónde se\n    prestó el servicio.\n\n  • DIRECCIÓN DE INSTALACIÓN / SUMINISTRO / SERVICIO / OBRA: dónde se hizo\n    realmente el trabajo. MUY IMPORTANTE: a menudo NO lleva etiqueta y aparece\n    incrustada dentro de una LÍNEA DE PRODUCTO O CONCEPTO. Ejemplo real:\n    \"Fibra 600M - San Pedro 37, Santiago De Compostela\" → aquí la dirección de\n    instalación es \"San Pedro 37, Santiago De Compostela\". Extráela SIEMPRE que\n    veas una calle+número dentro del detalle de líneas/conceptos, aunque no haya\n    ninguna etiqueta. También puede aparecer con etiquetas como \"Dirección de\n    Instalación\", \"Lugar de suministro\", \"Punto de servicio\", \"Dirección de la obra/finca\",\n    \"Instalación de referencia\", o dentro del concepto. ESTA es la que identifica\n    el hotel físico. Ej: \"CL/ALFONSO SENRA 110 - Ordes\".\n\nDebes extraer AMBAS por separado. Si existe dirección de instalación, es la\nPRIORITARIA para identificar el centro — aunque esté en letra pequeña, sin CP,\no mezclada en el texto del concepto. NUNCA la sustituyas por la fiscal.\n\nLa dirección del PROVEEDOR (quien emite/cobra) se ignora para el centro.\n\n============================================================\nDATOS A EXTRAER\n============================================================\n- PROVEEDOR: empresa que EMITE la factura, su dirección y CIF.\n- DESTINATARIO: razón social, NIF y dirección fiscal.\n- TIPO DE DOCUMENTO: pon \"es_factura\": true SOLO si es una FACTURA (definitiva o\n  rectificativa). Pon false si es presupuesto, oferta, proforma, albarán, pedido,\n  contrato o nota de entrega. Si un mismo PDF mezcla factura + presupuesto, es\n  FACTURA (true). Ante la duda razonable de que sea factura, true.\n- NÚMERO FACTURA: código fiscal oficial.\n- FECHA: emisión en YYYY-MM-DD.\n- IMPORTES: Base + IVA = Total. Sin IVA → tipo 0, cuota 0.00.\n  El punto es separador de miles en España (\"14.036,00\" = 14036.00).\n- FORMA DE PAGO: clasifica \"forma_pago\" con UNO de estos valores exactos:\n  domiciliacion (IBAN/recibo domiciliado/adeudo en cuenta), transferencia, tarjeta,\n  efectivo (metalico/contante), cheque, o desconocido si no consta.\n  Usa la VIA DE COBRO real, no las condiciones: \"al contado\" NO implica efectivo\n  si el cobro es por domiciliacion.\n\nDIRECCIONES — descomponlas en piezas (deja null lo que no aparezca):\n  • via      = tipo+nombre+número de calle (ej. \"Calle Alfonso Senra 110\")\n  • municipio= localidad/pueblo/ciudad (ej. \"Ordes\", \"Santiago de Compostela\")\n  • cp       = 5 dígitos si aparece\n  • provincia= si aparece\n\n============================================================\nIDENTIFICACIÓN DEL HOTEL (tu decisión)\n============================================================\nLista de hoteles (CODIGO|NOMBRE|DIRECCION|SOCIEDAD):\n${hotelesLista}\n\nElige el hotel de la lista que corresponde a esta factura y devuelve su CODIGO\nnumérico en \"codigo_hotel_ia\". Cómo decidir, POR ORDEN DE PRIORIDAD:\n\n  1. NOMBRE DEL HOTEL: si en la factura aparece el nombre de un hotel de la\n     lista, ese es el hotel — es la señal MÁS FUERTE, revísala PRIMERO y con\n     cuidado. Puede aparecer en CUALQUIERA de estos sitios, no solo en el\n     concepto:\n       • El campo \"Nº Pedido\" / \"Nº de pedido\" / \"Referencia\" de la cabecera\n         (ej. \"Nº PEDIDO: HOTEL ALDA SORIA ROOMS\" — esto identifica el hotel\n         de forma tan fiable como si apareciera en el concepto; NO lo ignores\n         solo porque esté en la cabecera y no en el cuerpo de la factura).\n       • La cabecera de la línea de artículo/concepto (ej. \"112065.324542.\n         HOTEL ALDA RIO TORMES\").\n       • Cualquier referencia, obra, o texto libre en la factura.\n     IMPORTANTE: si hay VARIOS hoteles de la lista con nombres parecidos (ej.\n     \"Ciudad de Soria\" vs \"Soria Rooms\", o \"Rio Duero\" vs \"Rio Tormes\"), el\n     nombre debe coincidir de forma ESPECÍFICA y COMPLETA con el de la\n     factura — no asumas el hotel \"más obvio\" o el que more te suene de la\n     misma ciudad si el nombre exacto en la factura apunta a otro distinto.\n  2. DIRECCIÓN DE INSTALACIÓN/SUMINISTRO: compárala con la DIRECCION de cada hotel\n     de la lista. Fíjate en CALLE + NÚMERO, no solo en la ciudad o el código postal.\n     Dos hoteles distintos pueden estar en la misma ciudad y compartir código postal\n     (ej. hay hoteles con el MISMO NOMBRE en ciudades/sociedades distintas, y hoteles\n     distintos muy cercanos): la calle y el número son lo que los distingue.\n  3. Si no hay ni nombre ni dirección de instalación, usa la dirección fiscal solo\n     como último recurso.\n\nMUY IMPORTANTE sobre la SOCIEDAD: la factura va dirigida a una razón social\n(destinatario_razon_social). El hotel que elijas DEBERÍA pertenecer a esa misma\nsociedad (última columna de la lista). Si el mejor candidato por dirección está en\nOTRA sociedad, probablemente te estás equivocando de hotel — revísalo.\n\nRellena también:\n  • \"confianza_hotel\": \"alta\" si nombre y/o calle+número coinciden con claridad;\n    \"media\" si hay una coincidencia razonable pero no total; \"baja\" si dudas entre\n    varios o solo tienes una pista débil (ciudad/CP sin calle).\n  • \"motivo_hotel\": una frase corta explicando en qué te basaste (ej. \"nombre 'Alda\n    Estación' en el concepto\", o \"calle San Pedro 37 coincide con hotel 118\").\n\nSi de verdad no puedes identificar ningún hotel, devuelve codigo_hotel_ia=null y\nconfianza_hotel=\"baja\". Nunca inventes un código al azar.\n\nCONCEPTO — MUY IMPORTANTE\n============================================================\nEl campo \"concepto\" debe llevar el texto COMPLETO Y LITERAL de TODAS las\nlíneas de artículo/servicio de la factura (la columna \"Artículos/Servicios\" o\nsimilar), tal cual aparece, SIN resumir ni parafrasear. Esto incluye:\n  • La cabecera de cada línea de artículo, que a menudo lleva un código seguido\n    del nombre del hotel/centro, ej: \"112065.324542.HOTEL ALDA RIO TORMES\" o\n    \"79520.292174.HOTEL ALDA MERCADO DE ZAMORA\". NUNCA omitas esta cabecera —\n    con frecuencia es la ÚNICA mención explícita del hotel en toda la factura,\n    y es la señal más fiable para identificarlo. Un resumen tipo \"Servicios:\n    Legionella, Tratamiento...\" que omita esa cabecera hace IMPOSIBLE\n    identificar el hotel correctamente.\n  • Las descripciones de servicio que vengan debajo (ej. \"Servicios:\n    Desratización - ...\").\n  • Cualquier otro texto de la línea (fechas de inicio/fin, nº de albarán, etc).\nConcatena todas las líneas con un espacio si hay varias. Prioriza SIEMPRE\nincluir literalmente cualquier fragmento que contenga \"HOTEL\", \"ALDA\" seguido\nde un nombre propio, o el nombre de una ciudad/localización.\n\nNÚMERO DE PEDIDO — MUY IMPORTANTE\n============================================================\nBusca un campo tipo \"Nº Pedido\", \"Nº de pedido\", \"Referencia\", \"PO\", \"Order\nNumber\" en la cabecera de la factura (junto a fecha factura, CIF cliente, etc).\nCópialo LITERAL en \"numero_pedido\". A veces este campo contiene el nombre del\nhotel destino cuando no aparece en ningún otro sitio de la factura (ej.\n\"Nº PEDIDO: HOTEL ALDA SORIA ROOMS\") — en ese caso es la ÚNICA pista para\nidentificar el hotel, así que es crítico no perderla. Si no hay ese campo o\nestá vacío/con un guion \"-\", devuelve null.\n\nDevuelve SOLO este JSON, sin texto adicional:\n{\n  \"es_factura\": true,\n  \"proveedor_nombre\": string_o_null,\n  \"proveedor_direccion\": string_o_null,\n  \"proveedor_cif\": string_o_null,\n  \"factura_fecha\": \"YYYY-MM-DD\",\n  \"factura_numero\": string_o_null,\n  \"destinatario_razon_social\": string_o_null,\n  \"destinatario_cif\": string_o_null,\n  \"direccion_fiscal\": { \"via\": string_o_null, \"municipio\": string_o_null, \"cp\": string_o_null, \"provincia\": string_o_null, \"raw\": string_o_null },\n  \"direccion_instalacion\": { \"via\": string_o_null, \"municipio\": string_o_null, \"cp\": string_o_null, \"provincia\": string_o_null, \"raw\": string_o_null },\n  \"tiene_direccion_instalacion\": false,\n  \"importe_total\": numero,\n  \"base_imponible\": numero,\n  \"iva_desglose\": [{\"tipo\": numero, \"cuota\": numero}],\n  \"concepto\": string_o_null,\n  \"numero_pedido\": string_o_null,\n  \"pago_efectivo\": false,\n  \"forma_pago\": \"domiciliacion|transferencia|tarjeta|efectivo|cheque|desconocido\",\n  \"forma_pago_detalle\": string_o_null,\n  \"multiples_centros\": false,\n  \"centros_lista\": [],\n  \"codigo_hotel_ia\": string_o_null,\n  \"confianza_hotel\": \"alta|media|baja\",\n  \"motivo_hotel\": string_o_null\n}`;\n\nconst payload = {\n  model: \"google/gemini-2.5-flash\",\n  messages: [{\n    role: \"user\",\n    content: [\n      { type: \"text\", text: PROMPT },\n      { type: \"image_url\", image_url: { url: \"data:application/pdf;base64,\" + pdfBase64 } }\n    ]\n  }],\n  temperature: 0,\n  max_tokens: 8192\n};\n\nreturn {\n  json: { ...$input.item.json, openrouter_payload: JSON.stringify(payload) },\n  binary: $input.item.binary || {}\n};\n"
+      },
+      "id": "212d3eb8-a2d9-4b3c-86cb-f22ec56e4ff4",
+      "name": "Build_Gemini_Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        17152,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const resp = $input.item.json;\nlet content = null;\ntry { content = resp?.choices?.[0]?.message?.content; } catch(e) {}\nif(!content) { try { content = resp?.candidates?.[0]?.content?.parts?.[0]?.text; } catch(e) {} }\nif (!content) throw new Error('Sin respuesta: ' + JSON.stringify(resp || {}).slice(0, 500));\n\n// Propagar campos del item anterior (OpenRouter HTTP pierde JSON previo)\nlet prevJson = {};\ntry {\n  const buildItems = $('Build_Gemini_Payload').all();\n  prevJson = buildItems[Math.min($itemIndex, buildItems.length-1)]?.json || {};\n} catch(e) {}\n\n// Eliminar payload pesado\ndelete prevJson.openrouter_payload;\ndelete prevJson.pdf_base64;\n\nreturn { json: { ...prevJson, output: content }, binary: $input.item.binary };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        17600,
+        752
+      ],
+      "id": "2a36392e-82fc-413a-bd15-4bdbc18414d8",
+      "name": "Extract_Vision_Response"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer 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"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.openrouter_payload }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        17376,
+        752
+      ],
+      "id": "d4bc5e22-9b7c-4188-bffa-8c712a2f04a4",
+      "name": "OpenRouter_Vision_Call",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Restaurar binary para el adjunto del email de aviso leve\nreturn [{\n  json: $input.item.json,\n  binary: $('Merge_PDFs_Centros').item.binary\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        21632,
+        1008
+      ],
+      "id": "8dde2844-a753-4e47-b2a3-167ece553cb1",
+      "name": "Prep_Aviso_Leve"
+    },
+    {
+      "parameters": {
+        "fromEmail": "facturasproveedores@aldahotels.com",
+        "toEmail": "={{ $json.acuse_to }}",
+        "subject": "={{ $json.acuse_subject }}",
+        "html": "={{ $json.acuse_html }}",
+        "options": {
+          "attachments": "={{ $json.acuse_attachments }}"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        21184,
+        864
+      ],
+      "id": "1355b97d-ce51-4926-8c91-f7c7fcff2d8f",
+      "name": "Email_Acuse_Recibo",
+      "webhookId": "1121682b-230a-445d-abe9-69d17b6e1b5e",
+      "credentials": {
+        "smtp": {
+          "id": "VVDZSdfh2KKf7hsQ",
+          "name": "SMTP account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Acuse de recibo al remitente — AGREGA todas las facturas archivadas del correo.\n// Fuente fiable: Prep_DocuWare_Centros (lleva ...d completo + binary.pdf_final).\n// NO depende del orden de salida de Google Sheets (append no garantiza alineación).\nconst archived = $('Prep_DocuWare_Centros').all();\nconst trigger  = $('Email Trigger (IMAP)1').first().json;\nlet _fromRaw = trigger.from?.value?.[0]?.address || trigger.from?.address || String(trigger.from || '');\nconst _emailMatch = String(_fromRaw).match(/[\\w.+-]+@[\\w.-]+\\.[a-z]{2,}/i);\nconst emailRemitente = (_emailMatch ? _emailMatch[0] : String(_fromRaw)).toLowerCase().trim();\nconst remitenteInterno = emailRemitente.endsWith('@aldahotels.com');\n// Diagnóstico: guardamos el valor crudo del remitente tal cual llegó del\n// trigger IMAP, para poder ver en el Excel exactamente qué formato tenía\n// si el filtro de interno/externo alguna vez se comporta de forma inesperada.\nconst _fromDiagnostico = String(_fromRaw).slice(0, 150);\nconst now = new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });\n\nconst facturas = archived.map(x => x.json || {});\n\n// ---- Adjuntar TODOS los PDF (uno por factura) ----\n// Adjuntar el PDF SOLO si el binario es resoluble (tiene .id en modo 'separate'\n// o .data en modo inline). Si no, el acuse se envía IGUAL sin adjunto: el email\n// de confirmación es lo importante y el PDF ya está archivado en DocuWare.\n// Un adjunto roto haría fallar el nodo SMTP y no llegaría ningún correo.\nconst outBinary = {};\nconst attachKeys = [];\narchived.forEach((x, i) => {\n  const pdf = x.binary?.pdf_final;\n  const resoluble = pdf && (pdf.id || pdf.data);  // referencia externa o base64 real\n  if(resoluble){\n    const key = 'factura_' + i;\n    const nombre = ((facturas[i].factura_numero || ('factura_' + (i+1))) + '').replace(/[^a-zA-Z0-9._-]/g, '_');\n    outBinary[key] = { ...pdf, fileName: nombre + '.pdf', fileExtension: 'pdf', mimeType: 'application/pdf' };\n    attachKeys.push(key);\n  }\n});\n\n// ---- Estado de una factura ----\nfunction estadoDe(d){\n  const esGrave = d.tiene_error_grave;\n  const esLeve  = !d.tiene_error_grave && d.tiene_error_leve;\n  if(esGrave){\n    let mensaje = (d.motivo_revision === 'factura_dirigida_a_sociedad')\n      ? 'Dirigida a la sociedad <strong>' + (d.hotel_destino_factura || '') + '</strong> sin hotel específico. Requiere imputación manual en Odoo antes de archivar.'\n      : 'Requiere revisión por parte de nuestro equipo antes de ser archivada.';\n    return { estado:'Pendiente de revisión', emoji:'🔴', colorBg:'#FEE2E2', colorBorder:'#991B1B', mensaje };\n  }\n  if(esLeve){\n    let mensaje;\n    if(d.motivo_revision === 'factura_dirigida_a_sociedad'){\n      mensaje = 'Dirigida a la sociedad <strong>' + (d.hotel_destino_factura || '') + '</strong> sin hotel concreto. Asignada provisionalmente a costes generales; impútala manualmente en Odoo.';\n    } else if(d.motivo_revision === 'costes_generales_posible_hotel'){\n      mensaje = 'Asignada a costes generales, pero hay una dirección que podría ser un hotel específico. Verifica la imputación.';\n    } else {\n      mensaje = 'Archivada en DocuWare con algunos avisos.';\n    }\n    return { estado:'Procesada con avisos', emoji:'🟡', colorBg:'#FEF3C7', colorBorder:'#D97706', mensaje };\n  }\n  return { estado:'Procesada correctamente', emoji:'✅', colorBg:'#D1FAE5', colorBorder:'#065F46', mensaje:'Recibida y archivada automáticamente en DocuWare.' };\n}\n\nconst HEAD = `<div style=\"background:#1F2937;padding:16px 20px;border-radius:6px;margin-bottom:24px\">\n  <img src=\"https://www.aldahotels.es/img/logo-alda-white.png\" alt=\"Alda Hotels\" style=\"height:32px\" onerror=\"this.style.display='none'\">\n  <span style=\"color:#fff;font-size:16px;font-weight:bold;margin-left:12px\">Alda Hotels · Facturación</span>\n</div>`;\nconst FOOT = `<p style=\"font-size:11px;color:#999;margin-top:24px;text-align:center\">Este es un mensaje automático del sistema de facturación de Alda Hotels.<br>Por favor, no respondas a este correo.</p>`;\nconst fmtImporte = v => (v != null && v !== '') ? (v + ' €') : '—';\n\nlet html, acuse_subject;\nconst anyGrave = facturas.some(d => d.tiene_error_grave);\nconst anyLeve  = facturas.some(d => !d.tiene_error_grave && d.tiene_error_leve);\n\nif(facturas.length <= 1){\n  // ---------- CASO 1 FACTURA (formato detallado original) ----------\n  const d = facturas[0] || {};\n  const s = estadoDe(d);\n  const erroresHtml = [\n    ...((d.errores_graves)||[]).map(e => `<li style=\"color:#991B1B\"><strong>Error:</strong> ${e}</li>`),\n    ...((d.errores_leves)||[]).map(e => `<li style=\"color:#92400E\"><strong>Aviso:</strong> ${e}</li>`)\n  ].join('');\n  html = `<!DOCTYPE html><html><body style=\"font-family:Arial,sans-serif;font-size:13px;color:#111;padding:24px;max-width:620px;margin:0 auto\">\n${HEAD}\n<div style=\"background:${s.colorBg};border-left:4px solid ${s.colorBorder};padding:14px 18px;border-radius:4px;margin-bottom:20px\">\n  <strong>${s.emoji} ${s.estado}</strong>\n</div>\n<p>${s.mensaje}</p>\n<table style=\"width:100%;border-collapse:collapse;font-size:12px;margin:16px 0\">\n  <tr style=\"background:#f5f5f5\"><td style=\"padding:7px 10px;font-weight:bold;width:40%\">Proveedor</td><td style=\"padding:7px 10px\">${d.proveedor_nombre || '—'}</td></tr>\n  <tr><td style=\"padding:7px 10px;font-weight:bold;width:40%\">Nº Factura</td><td style=\"padding:7px 10px\">${d.factura_numero || '—'}</td></tr>\n  <tr><td style=\"padding:7px 10px;font-weight:bold\">Fecha factura</td><td style=\"padding:7px 10px\">${d.factura_fecha || '—'}</td></tr>\n  <tr style=\"background:#f5f5f5\"><td style=\"padding:7px 10px;font-weight:bold\">Importe</td><td style=\"padding:7px 10px\">${fmtImporte(d.importe_total)}</td></tr>\n  <tr><td style=\"padding:7px 10px;font-weight:bold\">Hotel destinatario</td><td style=\"padding:7px 10px\">${d.hotel_nombre_odoo || d.hotel_destino_factura || '—'}</td></tr>\n  <tr style=\"background:#f5f5f5\"><td style=\"padding:7px 10px;font-weight:bold\">Forma de pago</td><td style=\"padding:7px 10px\">${d.forma_pago_detalle || '—'}</td></tr>\n  <tr><td style=\"padding:7px 10px;font-weight:bold\">Fecha recepción</td><td style=\"padding:7px 10px\">${now}</td></tr>\n</table>\n${erroresHtml ? `<div style=\"background:#FFF7ED;border:1px solid #FED7AA;padding:12px;border-radius:4px;margin:16px 0\">\n  <strong>Incidencias detectadas:</strong>\n  <ul style=\"margin:8px 0 0 0;padding-left:18px\">${erroresHtml}</ul>\n</div>` : ''}\n${FOOT}\n</body></html>`;\n  acuse_subject = `${s.emoji} [Alda Hotels] Factura ${d.factura_numero || ''} — ${s.estado}`;\n} else {\n  // ---------- CASO VARIAS FACTURAS (resumen agregado) ----------\n  const nOK    = facturas.filter(d => !d.tiene_error_grave && !d.tiene_error_leve).length;\n  const nLeve  = facturas.filter(d => !d.tiene_error_grave && d.tiene_error_leve).length;\n  const nGrave = facturas.filter(d => d.tiene_error_grave).length;\n\n  const resumenPartes = [];\n  if(nOK)    resumenPartes.push(`${nOK} correcta${nOK>1?'s':''}`);\n  if(nLeve)  resumenPartes.push(`${nLeve} con avisos`);\n  if(nGrave) resumenPartes.push(`${nGrave} en revisión`);\n  const resumenTxt = resumenPartes.join(' · ');\n\n  const bannerEmoji = nGrave ? '🔴' : (nLeve ? '🟡' : '✅');\n  const bannerBg     = nGrave ? '#FEE2E2' : (nLeve ? '#FEF3C7' : '#D1FAE5');\n  const bannerBorder = nGrave ? '#991B1B' : (nLeve ? '#D97706' : '#065F46');\n\n  const filas = facturas.map((d, i) => {\n    const s = estadoDe(d);\n    const bg = (i % 2 === 0) ? '#ffffff' : '#f5f5f5';\n    return `<tr style=\"background:${bg}\">\n      <td style=\"padding:7px 10px;text-align:center\">${s.emoji}</td>\n      <td style=\"padding:7px 10px\">${d.factura_numero || '—'}</td>\n      <td style=\"padding:7px 10px;text-align:right\">${fmtImporte(d.importe_total)}</td>\n      <td style=\"padding:7px 10px\">${d.hotel_nombre_odoo || d.hotel_destino_factura || '—'}</td>\n      <td style=\"padding:7px 10px;font-size:11px;color:${s.colorBorder}\">${s.estado}</td>\n    </tr>`;\n  }).join('');\n\n  const incidencias = facturas.map(d => {\n    const errs = [\n      ...((d.errores_graves)||[]).map(e => `<li style=\"color:#991B1B\"><strong>Error:</strong> ${e}</li>`),\n      ...((d.errores_leves)||[]).map(e => `<li style=\"color:#92400E\"><strong>Aviso:</strong> ${e}</li>`)\n    ];\n    if(!errs.length) return '';\n    return `<div style=\"margin:10px 0 0 0\">\n      <div style=\"font-weight:bold;font-size:12px\">Factura ${d.factura_numero || '—'}</div>\n      <ul style=\"margin:4px 0 0 0;padding-left:18px;font-size:12px\">${errs.join('')}</ul>\n    </div>`;\n  }).filter(Boolean).join('');\n\n  html = `<!DOCTYPE html><html><body style=\"font-family:Arial,sans-serif;font-size:13px;color:#111;padding:24px;max-width:640px;margin:0 auto\">\n${HEAD}\n<div style=\"background:${bannerBg};border-left:4px solid ${bannerBorder};padding:14px 18px;border-radius:4px;margin-bottom:20px\">\n  <strong>${bannerEmoji} ${facturas.length} facturas recibidas</strong><br>\n  <span style=\"font-size:12px\">${resumenTxt}</span>\n</div>\n<p>Hemos recibido y procesado las siguientes facturas adjuntas a tu correo:</p>\n<table style=\"width:100%;border-collapse:collapse;font-size:12px;margin:16px 0;border:1px solid #e5e7eb\">\n  <tr style=\"background:#1F2937;color:#fff\">\n    <td style=\"padding:8px 10px;text-align:center\"></td>\n    <td style=\"padding:8px 10px;font-weight:bold\">Nº Factura</td>\n    <td style=\"padding:8px 10px;font-weight:bold;text-align:right\">Importe</td>\n    <td style=\"padding:8px 10px;font-weight:bold\">Hotel</td>\n    <td style=\"padding:8px 10px;font-weight:bold\">Estado</td>\n  </tr>\n  ${filas}\n</table>\n${incidencias ? `<div style=\"background:#FFF7ED;border:1px solid #FED7AA;padding:12px;border-radius:4px;margin:16px 0\">\n  <strong>Incidencias detectadas:</strong>\n  ${incidencias}\n</div>` : ''}\n<p style=\"font-size:11px;color:#777;margin-top:8px\">Recepción: ${now}</p>\n${FOOT}\n</body></html>`;\n  acuse_subject = `${bannerEmoji} [Alda Hotels] ${facturas.length} facturas recibidas — ${resumenTxt}`;\n}\n\n// Item único (un solo acuse por correo). Conserva ...d de la 1ª factura para\n// compatibilidad aguas abajo, pero con flags agregados (OR) para IF_Error_Leve.\nconst base = facturas[0] || {};\nreturn {\n  json: {\n    ...base,\n    tiene_error_grave: anyGrave,\n    tiene_error_leve:  anyLeve,\n    acuse_to: emailRemitente,\n    remitente_interno: remitenteInterno,\n    _from_diagnostico: _fromDiagnostico,\n    acuse_subject,\n    acuse_html: html,\n    acuse_num_facturas: facturas.length,\n    acuse_attachments: attachKeys.join(',')\n  },\n  binary: outBinary\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20736,
+        944
+      ],
+      "id": "bbd492bc-9c80-47e7-aba8-2b518f696d5c",
+      "name": "Prep_Acuse_Recibo"
+    },
+    {
+      "parameters": {
+        "fromEmail": "facturasproveedores@aldahotels.com",
+        "toEmail": "diegovieiros@aldahotels.com",
+        "subject": "={{ '🟡 [Facturas] Aviso — ' + ($json.factura_numero || 'Sin número') }}",
+        "html": "=<!DOCTYPE html><html><body style=\"font-family:Arial,sans-serif;font-size:13px;color:#111;padding:24px;max-width:620px;margin:0 auto\">\n<div style=\"background:#D97706;color:#fff;padding:14px 18px;border-radius:6px;margin-bottom:20px\">\n  <strong>🟡 Factura archivada con avisos — revisión recomendada</strong>\n</div>\n<p>La factura ha sido enviada a DocuWare automáticamente. Se adjunta el PDF con el resumen de procesamiento.</p>\n<table style=\"width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px\">\n  <tr style=\"background:#f5f5f5\"><td style=\"padding:7px 10px;font-weight:bold;width:35%\">Proveedor</td><td style=\"padding:7px 10px\">{{ $json.proveedor_nombre }}</td></tr>\n  <tr><td style=\"padding:7px 10px;font-weight:bold\">Nº Factura</td><td style=\"padding:7px 10px\">{{ $json.factura_numero }}</td></tr>\n  <tr style=\"background:#f5f5f5\"><td style=\"padding:7px 10px;font-weight:bold\">Fecha</td><td style=\"padding:7px 10px\">{{ $json.factura_fecha }}</td></tr>\n  <tr><td style=\"padding:7px 10px;font-weight:bold\">Importe</td><td style=\"padding:7px 10px\">{{ $json.importe_total }} €</td></tr>\n  <tr style=\"background:#f5f5f5\"><td style=\"padding:7px 10px;font-weight:bold\">Hotel</td><td style=\"padding:7px 10px\">{{ $json.hotel_nombre_odoo }}</td></tr>\n  <tr><td style=\"padding:7px 10px;font-weight:bold\">DocuWare</td><td style=\"padding:7px 10px\">{{ $json.dw_hotel }}</td></tr>\n  <tr style=\"background:#f5f5f5\"><td style=\"padding:7px 10px;font-weight:bold\">Remitente</td><td style=\"padding:7px 10px\">{{ $('Email Trigger (IMAP)').item.json.from }}</td></tr>\n</table>\n<div style=\"background:#FEF3C7;border-left:4px solid #D97706;padding:12px;margin-bottom:20px;border-radius:3px\">\n  <strong>Avisos detectados:</strong>\n  <ul style=\"margin:6px 0 0 0;padding-left:18px\">\n    {{ $json.errores_leves.map(e => '<li>' + e + '</li>').join('') }}\n  </ul>\n</div>\n<p style=\"font-size:11px;color:#999;text-align:center\">Sistema de facturación Alda Hotels</p>\n</body></html>",
+        "options": {
+          "attachments": "pdf_final"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        21856,
+        1008
+      ],
+      "id": "87e88e35-87ab-4c58-a5b1-e7b0cdfb1f05",
+      "name": "Email_Aviso_Leve",
+      "webhookId": "91880e86-0fc0-4f52-b357-91b572c6d6ff",
+      "credentials": {
+        "smtp": {
+          "id": "VVDZSdfh2KKf7hsQ",
+          "name": "SMTP account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.tiene_error_leve }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        21408,
+        944
+      ],
+      "id": "9fb26ea1-d18c-4438-85e5-c6b285ee8042",
+      "name": "IF_Error_Leve"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Restaurar PDF original + summary PDF para merge\nconst summaryPdf = $input.item.binary?.summary_pdf;\nif (!summaryPdf) throw new Error('No se encontró summary_pdf');\n\n// Intentar recuperar el PDF original\nlet originalPdf = null;\n\ntry {\n  const detectItems = $('Detect_PDF_Adjunto').all();\n  // Buscar por pdf_index\n  const pdfIndex = $input.item.json?.pdf_index;\n  if(pdfIndex && detectItems[pdfIndex - 1]){\n    originalPdf = detectItems[pdfIndex - 1].binary?.attachment_0;\n  }\n  // Fallback: por itemIndex\n  if(!originalPdf) {\n    originalPdf = detectItems[Math.min($itemIndex, detectItems.length-1)]?.binary?.attachment_0;\n  }\n} catch(e) {\n  // Silenciar error — continuar sin PDF original\n}\n\n// Diagnóstico: por qué no se encontró el PDF original, si es el caso.\nlet _diagPdf = '';\nif(!originalPdf){\n  try {\n    const detectItems = $('Detect_PDF_Adjunto').all();\n    _diagPdf = `pdf_index=${$input.item.json?.pdf_index} itemIndex=${$itemIndex} total_detectados=${detectItems.length} claves_disponibles=${detectItems.map(d=>Object.keys(d.binary||{}).join('|')).join(',')}`;\n  } catch(e) { _diagPdf = 'error diag: ' + e.message; }\n}\n\n// _tiene_adjunto_original: condición TÉCNICA real (no el flag semántico\n// solo_enlace) que decide si Merge_PDFs_Centros puede ejecutarse con\n// attachment_0. Cubre tanto el caso esperado (factura solo-enlace, sin PDF)\n// como cualquier otro caso en que, por lo que sea, no se pudo recuperar el\n// PDF original de una factura que sí lo tenía — evita que Merge_PDFs_Centros\n// reviente por falta de 'attachment_0'.\nif(!originalPdf){\n  return {\n    json: { ...$input.item.json, _tiene_adjunto_original: false, _diag_pdf: _diagPdf },\n    binary: { pdf_final: summaryPdf }\n  };\n}\n\nreturn {\n  json: { ...$input.item.json, _tiene_adjunto_original: true },\n  binary: { attachment_0: originalPdf, summary_pdf: summaryPdf }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        18944,
+        944
+      ],
+      "id": "8711a2b4-817d-4006-84c6-4f17bed525c2",
+      "name": "Restore_Binary_Centros"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nif(!d.mover_necesario || !d.email_uid) return [{ json: { ...d, imap_movido: false } }];\nconst { ImapFlow } = require('imapflow');\nconst client = new ImapFlow({\n  host: 'gestionalda.es', port: 993, secure: true,\n  auth: { user: 'facturasproveedores@aldahotels.com', pass: 'AdtPr@72' },\n  logger: false\n});\ntry {\n  await client.connect();\n  await client.mailboxOpen('INBOX');\n  await client.messageMove(String(d.email_uid), 'Requiere Revision', { uid: true });\n  await client.logout();\n  return [{ json: { ...d, imap_movido: true } }];\n} catch(e) {\n  try { await client.logout(); } catch(_) {}\n  return [{ json: { ...d, imap_movido: false, imap_error: e.message } }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        21184,
+        672
+      ],
+      "id": "ffb0ae67-7a76-4ef1-96ed-59747d46d70d",
+      "name": "Mover_IMAP_Aprobacion"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mover email a carpeta Requiere Revision\nconst d = $('Prep_Aprobacion').item.json;\nlet emailUid = null;\ntry {\n  emailUid = $('Email Trigger (IMAP)1').item.json.attributes?.uid || null;\n} catch(e) {}\nreturn [{ json: { ...d, mover_a_carpeta: 'Requiere Revision', email_uid: emailUid, mover_necesario: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20960,
+        672
+      ],
+      "id": "8e4b0ad4-5a39-4fca-a590-414f874e8dde",
+      "name": "Mover_Email_Aprobacion"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "18vKUC0EflquVaFVNrWza-GJtK8yqW12Eo5NZ_EXzywI",
+          "mode": "list",
+          "cachedResultName": "Log_Facturas_PRO"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 0,
+          "mode": "list",
+          "cachedResultName": "Hoja 1"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        20736,
+        672
+      ],
+      "id": "8a073e97-a9dd-42ab-a8d8-a78a5e9f57bd",
+      "name": "Sheets_Aprobacion",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "TtPsOhNUw6FPJ0g9",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Registrar factura pendiente de aprobación en Sheets\nconst d = $('Prep_Aprobacion').item.json;\nconst now = new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });\n\nconst estadoFinal = d.tiene_error_grave ? 'Pendiente aprobación — Error grave' : 'Pendiente aprobación — Aviso leve';\nconst motivoRevision = [\n  ...(d.errores_graves || []).map(e => 'GRAVE: ' + e),\n  ...(d.errores_leves  || []).map(e => 'LEVE: '  + e)\n].join('; ');\n\n// Datos del email\nlet emailRemitente = '', asuntoEmail = '', nombreAdjunto = '', fechaRecepcion = now;\ntry {\n  const trigger = $('Email Trigger (IMAP)1').item.json;\n  emailRemitente = trigger.from?.value?.[0]?.address || trigger.from?.address || String(trigger.from || '');\n  asuntoEmail = trigger.subject || '';\n  fechaRecepcion = trigger.date\n    ? new Date(trigger.date).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })\n    : now;\n} catch(e) {}\n\nreturn [{\n  json: {\n    hotel_destino:         d.hotel_destino_factura || '',\n    sociedad_destino:      d.sociedad || '',\n    fecha_recepcion:       fechaRecepcion,\n    email_remitente:       emailRemitente,\n    asunto_email:          asuntoEmail,\n    nombre_adjunto:        d.drive_file_name || '',\n    fecha_ocr:             now,\n    factura_numero:        d.factura_numero || '',\n    proveedor:             d.proveedor_nombre || '',\n    factura_fecha:         d.factura_fecha || '',\n    importe_total:         d.importe_total ?? '',\n    forma_pago_detectada:  d.forma_pago_detalle || '',\n    hotel_odoo:            d.hotel_nombre_odoo || '',\n    sociedad:              d.sociedad || '',\n    codigo_hotel:          String(d.codigo_hotel || ''),\n    nivel_validacion:      d.validacion?.nivel ?? 0,\n    metodo_identificacion: d.validacion?.mensaje || '',\n    fecha_docuware:        '—',\n    dw_hotel:              d.dw_hotel || '',\n    dw_fpago:              d.dw_fpago || '',\n    resultado_docuware:    'Pendiente aprobación',\n    estado_final:          estadoFinal,\n    motivo_revision:       motivoRevision,\n    carpeta_imap:          'Requiere Revision',\n    fecha_fin:             now,\n    drive_file_id:         d.drive_file_id || ''\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20512,
+        672
+      ],
+      "id": "3d40c432-b199-4624-ab9c-65e62fe187ee",
+      "name": "Prep_Sheet_Aprobacion"
+    },
+    {
+      "parameters": {
+        "fromEmail": "facturasproveedores@aldahotels.com",
+        "toEmail": "diegovieiros@aldahotels.com",
+        "subject": "={{ $json.email_asunto }}",
+        "html": "={{ $json.email_html }}",
+        "options": {
+          "attachments": "pdf_final"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        20288,
+        672
+      ],
+      "id": "8d5e02a5-cf8c-466f-8d4b-f50effc973ba",
+      "name": "Email_Aprobacion",
+      "webhookId": "18291457-e544-4dfc-97d9-d573a7513dea",
+      "credentials": {
+        "smtp": {
+          "id": "VVDZSdfh2KKf7hsQ",
+          "name": "SMTP account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar datos para email de aprobación\nconst d = $('Build_HTML_Centros').item.json;\nconst now = new Date();\n// Token simple — los datos van directamente en la URL como parámetros\nconst emailUid = $('Email Trigger (IMAP)1').item.json.attributes?.uid || '';\nconst token = `${(d.factura_numero || 'SIN').replace(/[^a-zA-Z0-9]/g,'_')}_${emailUid}`;\nconst dw_hotel_enc = encodeURIComponent(d.dw_hotel || 'PENDIENTE');\nconst dw_fpago_enc = encodeURIComponent(d.dw_fpago || '00');\nconst factura_enc  = encodeURIComponent(d.factura_numero || '');\nconst proveedor_enc = encodeURIComponent((d.proveedor_nombre || '').substring(0, 50));\n\nconst email_uid = $('Email Trigger (IMAP)1').item.json.attributes?.uid || $('Email Trigger (IMAP)1').item.json.uid || '';\nconst uid_enc = encodeURIComponent(email_uid);\nconst nota_enc = encodeURIComponent((d.dw_nota || '').substring(0,50));\nconst nota2_enc = encodeURIComponent((d.dw_nota2 || d.factura_numero || '').substring(0,50));\nconst webhookUrl  = `https://n8n.gestionalda.es/webhook/aprobar-factura?token=${token}&hotel=${dw_hotel_enc}&fpago=${dw_fpago_enc}&factura=${factura_enc}&proveedor=${proveedor_enc}&uid=${uid_enc}&nota=${nota_enc}&nota2=${nota2_enc}`;\nconst rechazarUrl = `https://n8n.gestionalda.es/webhook/aprobar-factura?token=${token}&accion=rechazar&factura=${factura_enc}`;\n\n// Construir HTML del email\nconst esGrave = true; // Solo llegan graves aquí\nconst colorHeader = '#991B1B';\nconst bgHeader    = '#FEE2E2';\nconst emoji       = '🔴';\nconst motivo = d.motivo_revision || '';\nconst tipoError = motivo === 'factura_dirigida_a_sociedad'\n  ? 'Factura a sociedad — imputación manual requerida'\n  : motivo === 'multiples_centros'\n  ? 'Múltiples centros — asignar manualmente'\n  : 'Error grave — revisión obligatoria';\n\nconst listaGraves = (d.errores_graves || []).map(e => `<li>${e}</li>`).join('');\nconst listaLeves  = (d.errores_leves  || []).map(e => `<li>${e}</li>`).join('');\n\nconst htmlEmail = `<!DOCTYPE html><html><body style=\"font-family:Arial,sans-serif;font-size:13px;color:#111;padding:24px;max-width:620px;margin:0 auto\">\n<div style=\"background:${colorHeader};color:#fff;padding:14px 18px;border-radius:6px;margin-bottom:20px\">\n  <strong>${emoji} ${tipoError}</strong>\n</div>\n<table style=\"width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px\">\n  <tr style=\"background:#f5f5f5\"><td style=\"padding:7px 10px;font-weight:bold;width:35%\">Proveedor</td><td style=\"padding:7px 10px\">${d.proveedor_nombre || '—'}</td></tr>\n  <tr><td style=\"padding:7px 10px;font-weight:bold\">Nº Factura</td><td style=\"padding:7px 10px\">${d.factura_numero || '—'}</td></tr>\n  <tr style=\"background:#f5f5f5\"><td style=\"padding:7px 10px;font-weight:bold\">Fecha</td><td style=\"padding:7px 10px\">${d.factura_fecha || '—'}</td></tr>\n  <tr><td style=\"padding:7px 10px;font-weight:bold\">Importe</td><td style=\"padding:7px 10px\">${d.importe_total != null ? d.importe_total + ' €' : '—'}</td></tr>\n  <tr style=\"background:#f5f5f5\"><td style=\"padding:7px 10px;font-weight:bold\">Hotel</td><td style=\"padding:7px 10px\">${d.hotel_nombre_odoo || d.hotel_destino_factura || '—'}</td></tr>\n  <tr><td style=\"padding:7px 10px;font-weight:bold\">Sociedad</td><td style=\"padding:7px 10px\">${d.sociedad || '—'}</td></tr>\n</table>\n${listaGraves ? `<div style=\"background:#FEE2E2;border-left:4px solid #991B1B;padding:12px;margin-bottom:12px;border-radius:3px\"><strong>Errores graves:</strong><ul style=\"margin:6px 0 0 0;padding-left:18px\">${listaGraves}</ul></div>` : ''}\n${listaLeves  ? `<div style=\"background:#FEF3C7;border-left:4px solid #D97706;padding:12px;margin-bottom:20px;border-radius:3px\"><strong>Avisos leves:</strong><ul style=\"margin:6px 0 0 0;padding-left:18px\">${listaLeves}</ul></div>` : ''}\n<div style=\"text-align:center;margin:28px 0 16px\">\n  <a href=\"${webhookUrl}\" style=\"background:#065F46;color:#fff;padding:14px 36px;text-decoration:none;border-radius:6px;font-size:15px;font-weight:bold;display:inline-block;margin-right:12px\">✓ Aprobar y archivar</a>\n  <a href=\"${rechazarUrl}\" style=\"background:#7F1D1D;color:#fff;padding:14px 36px;text-decoration:none;border-radius:6px;font-size:15px;font-weight:bold;display:inline-block\">✗ Rechazar</a>\n</div>\n<p style=\"font-size:11px;color:#999;text-align:center;margin-top:24px\">Sistema de facturación Alda Hotels · ${now.toLocaleString('es-ES',{timeZone:'Europe/Madrid'})}</p>\n</body></html>`;\n\n// Datos de Google Drive\nconst driveFileId = $('Drive_Subir_PDF').item.json?.id || '';\nconst driveFileName = $('Drive_Subir_PDF').item.json?.name || '';\n\nreturn [{\n  json: {\n    drive_file_id: driveFileId,\n    drive_file_name: driveFileName,\n    ...d,\n    approval_token: token,\n    approval_url: webhookUrl,\n    email_html: htmlEmail,\n    email_asunto: `${emoji} [Facturas] ${tipoError} — ${d.factura_numero || 'Sin número'}`\n  },\n  binary: $('Merge_PDFs_Centros').item.binary\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20064,
+        672
+      ],
+      "id": "e5d7c606-782d-4873-9f0d-f918aa134927",
+      "name": "Prep_Aprobacion"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.tiene_error_grave }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        19616,
+        944
+      ],
+      "id": "c31874ff-f56d-4908-a1ac-7b4451f07cbc",
+      "name": "IF_Necesita_Aprobacion"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Consolidar todos los hoteles de Odoo en un único item\nconst items = $input.all();\nconst hoteles = items.map(i => i.json);\nreturn [{ json: { hoteles_odoo: hoteles } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        15360,
+        848
+      ],
+      "id": "da679efe-b2d9-4180-ac38-333b563baa75",
+      "name": "Code_Hoteles_JSON"
+    },
+    {
+      "parameters": {
+        "resource": "custom",
+        "customResource": "=res.company",
+        "operation": "getAll",
+        "returnAll": true,
+        "options": {
+          "fieldsList": [
+            "id",
+            "name",
+            "vat",
+            "street",
+            "street2",
+            "city_id",
+            "zip",
+            "company_registry",
+            "zip_id"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 1,
+      "position": [
+        15584,
+        848
+      ],
+      "id": "73180c4c-f87c-4a91-92ad-9af8037ca610",
+      "name": "Get_Companies",
+      "credentials": {
+        "odooApi": {
+          "id": "smS9NmpDawbFL5pH",
+          "name": "Odoo PRO"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Consolida datos de referencia en un único item para validación aguas abajo.\n// - Compañías (res.company): se leen por referencia de Get_Companies.\n// - Códigos postales (res.city.zip): llegan como input de este nodo (Get_CityZip).\n//   En res.city.zip: name = C.P. y city_id = [id, nombre de ciudad].\n// Se une cada compañía con su registro de res.city.zip para obtener el CP y la\n// ciudad autoritativos. Detect_PDF_Adjunto lee el email del trigger, no de este\n// item, así que consolidar aquí es seguro.\n\nconst companiesRaw = $('Get_Companies').all().map(i => i.json);\n\n// Registros de res.city.zip. Dos índices para unir de forma robusta:\n//  - por id (para el caso en que res.company tenga zip_id → res.city.zip)\n//  - por CP normalizado (name), para unir por el código postal de texto\nconst zips = $input.all().map(i => i.json);\nconst zipById = {};\nconst zipByCp = {};\nfor (const z of zips) {\n  if (!z) continue;\n  const ciudad = Array.isArray(z.city_id) ? z.city_id[1] : '';\n  const rec = { cp: z.name || '', ciudad };\n  if (z.id != null) zipById[z.id] = rec;\n  if (z.name) zipByCp[String(z.name).trim()] = rec;\n}\n\nconst companies = companiesRaw.map(comp => {\n  let rec = null;\n  // 1) clave directa: res.company.zip_id → res.city.zip\n  if (Array.isArray(comp.zip_id) && zipById[comp.zip_id[0]]) rec = zipById[comp.zip_id[0]];\n  // 2) fallback: emparejar por el CP de texto de la compañía\n  if (!rec && comp.zip && zipByCp[String(comp.zip).trim()]) rec = zipByCp[String(comp.zip).trim()];\n  const ciudad = (rec && rec.ciudad) || (Array.isArray(comp.city_id) ? comp.city_id[1] : comp.city) || '';\n  const cp = (rec && rec.cp) || comp.zip || '';\n  return { ...comp, ciudad, cp };\n});\n\nlet hoteles = [];\ntry { hoteles = $('Code_Hoteles_JSON').first().json.hoteles_odoo || []; } catch(e){}\nreturn [{ json: { companies, hoteles_odoo: hoteles } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16256,
+        848
+      ],
+      "id": "cde014ad-30dc-4cdc-a922-1d39a4ccbcee",
+      "name": "Code_Companies_JSON"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nreturn items.map(item => {\n  const fullName = item.json.name || \"\";\n  const address  = item.json.contact_address_complete || \"\";\n  const cpMatch  = address.match(/\\b\\d{5}\\b/);\n  // company_id devuelve [id, \"Nombre Sociedad\"]\n  const companyRaw = item.json.company_id;\n  const sociedad = Array.isArray(companyRaw) ? companyRaw[1] : (companyRaw || null);\n  // id de la compañía (res.company) para enlazar hotel↔sociedad por ID (infalible),\n  // no solo por nombre de texto.\n  const companyId = Array.isArray(companyRaw) ? companyRaw[0] : null;\n  return {\n    json: {\n      odoo_id:        item.json.id,\n      nombre_completo: fullName,\n      codigo_hotel:   item.json.pms_property_code || null,\n      direccion_odoo: address,\n      cp_odoo:        cpMatch ? cpMatch[0] : null,\n      nombre_limpio:  fullName.replace(/\\[\\d+\\]\\s*/, \"\").trim(),\n      email:          item.json.email,\n      sociedad:       sociedad,\n      company_odoo_id: companyId\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        15136,
+        848
+      ],
+      "id": "e799409d-196c-40dc-8421-e74744f31a7a",
+      "name": "Clean_Address"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Leer datos de la factura\n// Merge_Final combina: [in0] item factura + [in1] item con hoteles embebidos\n// Detectar cuál es cuál por contenido\n// Mapa de sociedades → costes generales\nvar COSTES_GENERALES = [\n  { sociedad: 'hoteles rias altas',       codigo: '400', nombre: 'Costes Generales Hoteles Rías Altas, S.L.U.' },\n  { sociedad: 'alda compostela',          codigo: '100', nombre: 'Costes Generales Alda Compostela S.L.U.' },\n  { sociedad: 'alda castilla',            codigo: '200', nombre: 'Costes Generales Alda Castilla, S.L.' },\n  { sociedad: 'alda rias baixas',         codigo: '300', nombre: 'Costes Generales Alda Rías Baixas S.L.U.' },\n  { sociedad: 'alda hotels hosteleria',   codigo: '500', nombre: 'Costes Generales Alda Hotels Hostelería S.L' },\n  { sociedad: 'consultores hoteleros',    codigo: '012', nombre: 'Coste General Consultores Hoteleros Integrales' },\n  { sociedad: 'niuco homes',              codigo: '900', nombre: 'Costes Generales Niuco Homes S.L' },\n  { sociedad: 'restauradores de comida',  codigo: '800', nombre: 'Coste general Restauradores de Comida Atlántica' },\n];\n\n// Datos de la factura vienen directamente de IF_Datos_Extraidos\nconst datosIA = $input.item.json;\nconst soloEnlace = datosIA.solo_enlace === true;\n\n// ── Leer el CUERPO del email (para detectar 'efectivo' y avisos de revisión) ──\nlet cuerpoEmail = '';\ntry {\n  const t = $('Email Trigger (IMAP)1').first().json;\n  const html = t.textHtml || t.html || t.bodyHtml || '';\n  const text = t.textPlain || t.text || t.bodyText || '';\n  cuerpoEmail = (text || html.replace(/<[^>]+>/g, ' ')).toLowerCase();\n} catch(e) {}\n// Efectivo indicado en el cuerpo del mensaje (BUG: antes solo se miraba la factura)\nconst efectivoEnCuerpo = /\\befectivo\\b|\\bmetalico\\b|\\bmetálico\\b|\\ben mano\\b|\\bcontra ?reembolso\\b/.test(cuerpoEmail);\n// El cuerpo pide revisión manual explícita\nconst CUERPO_REVISION_KW = ['revisar', 'revision', 'revisión', 'urgente', 'incidencia', 'reclamacion', 'reclamación', 'error en la factura', 'factura incorrecta', 'abono', 'rectificativa', 'duplicad'];\nconst cuerpoRequiereAtencion = CUERPO_REVISION_KW.some(k => cuerpoEmail.includes(k));\nconst enlaceDescarga = datosIA.enlace_descarga || null;\nconst enlacesDetectados = datosIA.enlaces_detectados || [];\n// Hoteles desde Code_Hoteles_JSON (upstream secuencial)\nlet hoteles = [];\ntry { hoteles = $('Code_Hoteles_JSON').first().json.hoteles_odoo.map(h => ({ json: h })); } catch(e) {}\n\nconst EMAILS_GENERICOS = ['info@insidehome.es'];\nconst WHITELIST = ['diegovieiros@aldahotels.com'];\n// Dominios del grupo Alda — emails de estos dominios son de confianza\nconst DOMINIOS_GRUPO = ['@aldahotels.com', '@sh360.es', '@humanfactorinnovation.com'];\nconst DOMINIO_ALDA = '@aldahotels.com'; // Mantenido por compatibilidad\nconst esEmailGrupo = email => email && DOMINIOS_GRUPO.some(d => email.endsWith(d)) && !EMAILS_GENERICOS.includes(email);\n\n// Registros que no son hoteles reales\nconst EXCLUIR_NOMBRES = ['costes generales', 'coste general', 'consultores hoteleros',\n                          'garfo e coitelo', 'gestion proyectos', 'taberna central',\n                          'a nosa taberna', 'niuco homes', 'restauradores de comida'];\n\n// Sociedades — si hotel_destino coincide y no hay match por email → revisión manual\nconst SOCIEDADES_CONOCIDAS = [\n  'hoteles rias altas', 'alda compostela', 'alda castilla', 'alda rias baixas',\n  'alda hotels hosteleria', 'consultores hoteleros integrales', 'consultores hoteleros integral', 'niuco homes',\n  'restauradores de comida atlantica', 'alda hotels'\n];\n\nlet emailRemitente = '';\nlet asuntoEmail = '';\ntry {\n  const t = $('Email Trigger (IMAP)1').first().json;\n  emailRemitente = (t.from?.value?.[0]?.address || t.from?.address || t.from || '').toLowerCase().trim();\n  asuntoEmail = t.subject || '';\n} catch(e) {}\n\nconst normalizar = t => String(t||'').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/ +/g,' ').trim();\nconst extraerCP  = t => (String(t||'').match(/\\b\\d{5}\\b/)||[null])[0];\nconst bigramas   = s => { const set=new Set(),n=normalizar(s); for(let i=0;i<n.length-1;i++)set.add(n.slice(i,i+2)); return set; };\nconst jaccard    = (a,b) => { const sa=bigramas(a),sb=bigramas(b); if(!sa.size||!sb.size)return 0; let inter=0; for(const bg of sa)if(sb.has(bg))inter++; return inter/(sa.size+sb.size-inter); };\n\nconst esCosteGeneral = nombre => EXCLUIR_NOMBRES.some(k => normalizar(nombre||'').includes(k));\nconst esSociedad = nombre => SOCIEDADES_CONOCIDAS.some(k => normalizar(nombre||'').includes(k));\nconst esEmailAlda = email => email && email.endsWith(DOMINIO_ALDA) && !EMAILS_GENERICOS.includes(email);\n\nconst emailBusqueda = (datosIA.usuario_envio||'').toLowerCase().trim();\nconst dirFactura    = datosIA.hotel_direccion||'';\nconst cpFactura     = extraerCP(dirFactura);\nconst nombreDestino = normalizar(datosIA.hotel_destino||'');\n\nlet mejorMatch = null, nivelSeguridad = 0, motivoLog = 'Sin coincidencia', scoreDir = 0;\nlet modoMultiplesCentros = false;\nlet esCostesGenerales = false;\nlet matchSociedad = true;\nlet motivoRevision = '';\n\n// ============================================================\n// PASO 0: La IA identificó el hotel directamente (codigo_hotel_ia)\n// Validación OBLIGATORIA de sociedad: si el hotel sugerido pertenece a una\n// sociedad que no comparte ninguna palabra significativa con el destinatario\n// de la factura, SE RECHAZA el match sin excepciones (ni siquiera con\n// confianza alta — una dirección puede matchear \"bien\" por error de\n// extracción, pero la sociedad es un dato legal fiable que no debe saltarse).\n// ============================================================\n// ── GUARDARRAÍL DE SOCIEDAD POR CIF ──────────────────────────────────────\n// La sociedad identificada por el CIF de la factura (calculada en\n// Match_Hotel_Determinista, campo sociedad_cif_id) es la autoridad. NINGÚN\n// paso de matching de este nodo puede elegir un hotel que no pertenezca a esa\n// sociedad. Se enlaza por id de compañía (infalible). Si no hay CIF utilizable,\n// _hotelSociedadOk no filtra (deja pasar) y se cae al comportamiento por texto.\nconst _socCifId = datosIA.sociedad_cif_id ?? null;\nconst _socCifNombre = datosIA.sociedad_cif_nombre || '';\nconst _GENSOC = new Set(['alda','hotel','hoteles','sociedad','limitada','anonima','unipersonal','slu','sau','sl','sa']);\nconst _sigWordsSoc = s => normalizar(s).split(' ').filter(w => w.length >= 4 && !_GENSOC.has(w));\n// Hoteles con el enlace de sociedad (company_odoo_id) roto o ausente en Odoo —\n// se recogen aquí para poder avisar de un problema de DATOS, no solo aplicar\n// el guardarraíl. El código puede compensar con el fallback de texto, pero la\n// ficha del hotel en Odoo debería tener el enlace correcto.\nconst _hotelesSinEnlaceSociedad = [];\nfunction _hotelSociedadOk(hj){\n  if(_socCifId == null) return true;               // sin CIF fiable → no filtra aquí\n  if(hj.company_odoo_id == null){\n    _hotelesSinEnlaceSociedad.push(hj.nombre_limpio || hj.codigo_hotel || '?');\n    // Sin id de compañía: NO dejamos pasar a ciegas. Fallback por texto de la\n    // sociedad (igual que hace el guardarraíl en Match_Hotel_Determinista) —\n    // si el texto tampoco coincide, se bloquea igual que con id.\n    const wh = new Set(_sigWordsSoc(hj.sociedad || ''));\n    for (const w of _sigWordsSoc(_socCifNombre)) if (wh.has(w)) return true;\n    return false;\n  }\n  return String(hj.company_odoo_id) === String(_socCifId);\n}\nconst _socDestinatario = normalizar(datosIA.destinatario_razon_social || datosIA.hotel_destino || '');\nif(datosIA.codigo_hotel_ia){\n  const codigoRaw = String(datosIA.codigo_hotel_ia).trim();\n  if(/^\\d+$/.test(codigoRaw)){\n    const codigoIA = codigoRaw.padStart(3,'0');\n    const hotelIA = hoteles.find(h => String(h.json.codigo_hotel||'').padStart(3,'0') === codigoIA);\n    if(hotelIA){\n      const _socHotel = normalizar(hotelIA.json.sociedad || '');\n      const _generic = new Set(['alda','hotel','hoteles','sociedad','limitada','anonima','unipersonal','slu','sau']);\n      const _wDest = _socDestinatario.split(' ').filter(w=>w.length>=4 && !_generic.has(w));\n      const _wHotel = new Set(_socHotel.split(' ').filter(w=>w.length>=4 && !_generic.has(w)));\n      const _sharedSig = _wDest.filter(w=>_wHotel.has(w)).length;\n      const _allWDest = _socDestinatario.split(' ').filter(w=>w.length>=3);\n      const _allWHotel = new Set(_socHotel.split(' ').filter(w=>w.length>=3));\n      const _sharedAll = _allWDest.filter(w=>_allWHotel.has(w)).length;\n      // Sociedad OK: si conocemos la sociedad por CIF, se exige que el hotel\n      // pertenezca a esa compañía (enlace por id). Si no hay CIF, se cae a la\n      // comparación por texto de la razón social.\n      const _socOk = (_socCifId != null)\n        ? _hotelSociedadOk(hotelIA.json)\n        : (_sharedSig >= 1 || _sharedAll >= 2);\n      if(_socOk){\n        mejorMatch = hotelIA.json; nivelSeguridad = 3;\n        motivoLog = 'IA identificó hotel: ' + hotelIA.json.nombre_limpio + ' (código ' + codigoIA + ')';\n      }\n      // Si la sociedad no coincide -> match RECHAZADO sin excepciones, deja\n      // fluir a P1/P2/P3 (P3 asignará costes generales de la sociedad correcta)\n    }\n  }\n  if(!mejorMatch){\n    const nombreIA = normalizar(datosIA.codigo_hotel_ia).replace(/ /g,'');\n    let mjScore = 0;\n    for(const h of hoteles){\n      if(esCosteGeneral(h.json.nombre_completo||'')) continue;\n      if(!_hotelSociedadOk(h.json)) continue;\n      const s = jaccard(nombreIA, normalizar(h.json.nombre_limpio||'').replace(/ /g,''));\n      if(s > 0.5 && s > mjScore){ mjScore = s; mejorMatch = h.json; nivelSeguridad = 3; motivoLog = 'IA código texto → ' + h.json.nombre_limpio; }\n    }\n  }\n}\n\n// P0: Email remitente del grupo Alda\nif(!mejorMatch && esEmailGrupo(emailRemitente)){\n  for(const h of hoteles){\n    if(esCosteGeneral(h.json.nombre_completo||'')) continue;\n    if(!_hotelSociedadOk(h.json)) continue;\n    const eo = String(h.json.email||'').toLowerCase();\n    if(!eo || EMAILS_GENERICOS.includes(eo)) continue;\n    if(eo === emailRemitente){ mejorMatch = h.json; nivelSeguridad = 3; motivoLog = 'Email remitente coincide con hotel Odoo'; break; }\n  }\n}\n\n// P1: Email en la factura\nif(!mejorMatch && emailBusqueda){\n  for(const h of hoteles){\n    if(esCosteGeneral(h.json.nombre_completo||'')) continue;\n    if(!_hotelSociedadOk(h.json)) continue;\n    const eo = String(h.json.email||'').toLowerCase();\n    if(!eo || EMAILS_GENERICOS.includes(eo)) continue;\n    if(eo === emailBusqueda){ mejorMatch = h.json; nivelSeguridad = 3; motivoLog = 'Email factura coincide con Odoo'; break; }\n  }\n}\n\n// P2: Nombre del hotel en el concepto de la factura\nif(!mejorMatch && datosIA.concepto){\n  const conceptoNorm = normalizar(datosIA.concepto);\n  let mjScore = 0;\n  for(const h of hoteles){\n    if(esCosteGeneral(h.json.nombre_completo||'')) continue;\n    if(!_hotelSociedadOk(h.json)) continue;\n    const nombreH = normalizar(h.json.nombre_limpio||'');\n    if(nombreH.length < 5) continue;\n    if(conceptoNorm.includes(nombreH)){ mejorMatch = h.json; nivelSeguridad = 2; motivoLog = 'Hotel en concepto: ' + h.json.nombre_limpio; break; }\n    const s = jaccard(conceptoNorm, nombreH);\n    if(s > 0.5 && s > mjScore){ mjScore = s; mejorMatch = h.json; nivelSeguridad = 2; motivoLog = 'Hotel en concepto (fuzzy): ' + h.json.nombre_limpio; }\n  }\n}\n\n// P3: Sociedad → costes generales (siempre requiere revisión)\nif(!mejorMatch && esSociedad(datosIA.hotel_destino||'')){\n  const _socNorm = normalizar(datosIA.hotel_destino||'');\n  const _cgMatch = COSTES_GENERALES.find(cg => _socNorm.includes(cg.sociedad));\n  if(_cgMatch){\n    mejorMatch = { odoo_id: null, codigo_hotel: _cgMatch.codigo, nombre_limpio: _cgMatch.nombre, nombre_completo: _cgMatch.nombre, sociedad: _cgMatch.nombre, email: '', direccion_odoo: '', cif_odoo: '' };\n    esCostesGenerales = true; nivelSeguridad = 2;\n    motivoLog = 'Sociedad → costes generales: ' + _cgMatch.nombre;\n    motivoRevision = 'factura_dirigida_a_sociedad';\n  } else {\n    motivoLog = 'Factura a sociedad sin match en costes generales';\n  }\n}\n\n// P4: Múltiples centros → costes generales de la sociedad\nif(datosIA.multiples_centros === true){\n  modoMultiplesCentros = true;\n  let cgSoc = null;\n  if(datosIA.hotel_destino){ const n = normalizar(datosIA.hotel_destino); cgSoc = COSTES_GENERALES.find(cg => n.includes(cg.sociedad)); }\n  if(!cgSoc && mejorMatch?.sociedad){ const n = normalizar(mejorMatch.sociedad); cgSoc = COSTES_GENERALES.find(cg => n.includes(cg.sociedad)); }\n  if(cgSoc){\n    mejorMatch = { odoo_id: null, codigo_hotel: cgSoc.codigo, nombre_limpio: cgSoc.nombre, nombre_completo: cgSoc.nombre, sociedad: cgSoc.nombre, email: '', direccion_odoo: '', cif_odoo: '' };\n    esCostesGenerales = true; nivelSeguridad = 2;\n    motivoLog = 'Múltiples centros → ' + cgSoc.nombre;\n    motivoRevision = 'multiples_centros';\n  }\n}\n\n\nconst erroresGraves = [];\nconst erroresLeves  = [];\n\nconst codigoHotelDW = mejorMatch?.codigo_hotel != null ? String(mejorMatch.codigo_hotel).padStart(3, '0') : null;\n\n// Validación y forzado de revisión si termina cayendo en un código de Costes Generales\n// Costes generales: no forzar error grave\n\nif(datosIA.confianza_hotel === 'baja' && mejorMatch && !COSTES_GENERALES.some(cg => cg.codigo === codigoHotelDW)){\n  erroresLeves.push('Identificación del hotel con confianza baja — verificar hotel destino');\n}\n\nif(!datosIA.factura_numero) erroresGraves.push('Falta número de factura');\nif(!datosIA.factura_fecha)  erroresGraves.push('Falta fecha de factura');\n\nif(!datosIA.hotel_destino)  erroresGraves.push('Falta denominación social del destinatario');\nif(!datosIA.hotel_direccion && !datosIA.direccion_instalacion) erroresGraves.push('Falta dirección del destinatario');\n\nconst cifFactura = (datosIA.hotel_destino_cif || '').replace(/[^A-Z0-9]/gi,'').toUpperCase();\nconst cifOdoo    = (mejorMatch?.cif_odoo || '').replace(/[^A-Z0-9]/gi,'').toUpperCase();\nif(cifFactura && cifOdoo && cifFactura !== cifOdoo && !COSTES_GENERALES.some(cg => cg.codigo === codigoHotelDW)) erroresGraves.push('CIF del destinatario no coincide con Odoo');\n\n// (Comprobación de dirección fiscal duplicada eliminada — comparaba la\n// dirección fiscal de la factura, que es SIEMPRE la sede social por diseño,\n// contra la dirección del HOTEL concreto asignado, que es un edificio\n// distinto. Esas dos direcciones son DIFERENTES por naturaleza en casi todas\n// las facturas legítimas, así que este chequeo saltaba casi siempre sin\n// aportar señal real. La comprobación correcta y tolerante — que compara\n// contra la sede social O cualquier dirección de hotel conocida — sigue más\n// abajo en este mismo nodo.)\n\n// FALLO DE EXTRACCIÓN (parser_error): la respuesta de la IA no se pudo parsear\n// como JSON. Esto NO significa que la factura esté incompleta — casi seguro\n// significa que la llamada a Gemini falló, devolvió texto no-JSON, o se cortó.\n// Si no distinguimos este caso, el usuario ve una cascada confusa de \"falta\n// nombre, falta CIF, falta importe...\" para una factura que en realidad tiene\n// todos esos datos perfectamente legibles — la causa real queda oculta.\nif(datosIA.parser_error === true){\n  erroresGraves.length = 0;\n  erroresLeves.length = 0;\n  const esTruncado = datosIA.truncado === true;\n  erroresGraves.push(\n    (esTruncado\n      ? 'FALLO DE EXTRACCIÓN (respuesta truncada): la respuesta de la IA se cortó a mitad ' +\n        '(corte de red/conexión durante la transmisión, no un fallo de la IA generando el ' +\n        'contenido). No es que falten datos en la factura. Solución: reenviar este correo ' +\n        'para que se reprocese — casi siempre basta con un segundo intento.'\n      : 'FALLO DE EXTRACCIÓN: la IA no devolvió un JSON válido para esta factura (' +\n        (datosIA.error_msg || 'motivo desconocido') + '). No es que falten datos en la ' +\n        'factura — es un fallo técnico de la llamada a la IA. Reintentar el procesamiento; ' +\n        'si persiste, revisar OpenRouter_Vision_Call.'\n    ) +\n    (datosIA.raw_text ? ' Fragmento de respuesta recibida: \"' + String(datosIA.raw_text).slice(0,150) + '...\"' : '')\n  );\n}\n\n// Todas las comprobaciones de campos individuales se OMITEN por completo si ya\n// sabemos que la extracción falló (parser_error) — no tiene sentido decir \"falta\n// el nombre, falta el CIF, falta el importe...\" cuando el problema real es que la\n// IA no devolvió un JSON legible. El mensaje de FALLO DE EXTRACCIÓN de arriba ya\n// es la única incidencia relevante en ese caso.\nif(!datosIA.parser_error){\n  if(!datosIA.proveedor_nombre)    erroresGraves.push('Falta nombre del proveedor');\n  if(!datosIA.proveedor_cif)       erroresGraves.push('Falta CIF/NIF del proveedor');\n  if(!datosIA.proveedor_direccion) erroresGraves.push('Falta dirección del proveedor');\n\n  if(!datosIA.importe_total && datosIA.importe_total !== 0) erroresGraves.push('Falta total de factura');\n  if(!datosIA.base_imponible && datosIA.base_imponible !== 0) erroresGraves.push('Falta base imponible');\n\n  // LEVE (spec escala de errores): no consta el % de IVA desglosado\n  const _tieneIvaPct = Array.isArray(datosIA.iva_desglose) &&\n    datosIA.iva_desglose.some(i => i && (i.tipo != null && i.tipo !== '' || (i.cuota != null && i.cuota !== '')));\n  if(!_tieneIvaPct){\n    erroresLeves.push('No consta el porcentaje/desglose de IVA en la factura — verificar (se calcula en el futuro)');\n  }\n\n  if(!datosIA.concepto && !datosIA.direccion_instalacion) erroresGraves.push('Falta concepto/descripción');\n\n  if(!mejorMatch){\n    erroresGraves.push('No se ha podido identificar el hotel/sociedad destinatario');\n  }\n  if(mejorMatch && !matchSociedad && !datosIA.direccion_instalacion && !COSTES_GENERALES.some(cg => cg.codigo === codigoHotelDW)){\n    erroresGraves.push('El hotel no coincide con la sociedad de la factura');\n  }\n\n  // LEVE (no bloquea): la direccion fiscal de la SOCIEDAD en la factura no coincide\n  // con la registrada en Odoo (res.company). Detecta domicilios desactualizados.\n  // Se busca la compañia por CIF; aplica con cualquier metodo de match.\n  try {\n    const normCif = s => String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'').replace(/^ES/,'');\n    const companies = ($('Code_Companies_JSON').first().json.companies) || [];\n    const cifFac = normCif(datosIA.hotel_destino_cif || datosIA.destinatario_cif);\n    const dirFiscalFac = datosIA.hotel_direccion || (datosIA.direccion_fiscal && datosIA.direccion_fiscal.raw) || '';\n    if(cifFac && dirFiscalFac && companies.length){\n      const comp = companies.find(c => normCif(c.vat) === cifFac);\n      if(comp){\n        // CP y ciudad autoritativos: vienen de res.city (unidos en Code_Companies_JSON\n        // como comp.cp y comp.ciudad). Fallback a los campos de res.company.\n        const cpComp = comp.cp || comp.zip || '';\n        const ciudadComp = comp.ciudad || (Array.isArray(comp.city_id) ? comp.city_id[1] : (comp.city || ''));\n        const dirComp = [comp.street, comp.street2, cpComp, ciudadComp].filter(Boolean).join(' ');\n        if(dirComp){\n          // La dirección fiscal de la factura NO se considera errónea si coincide con\n          // la sede social (res.company) O con cualquier dirección de hotel del grupo:\n          // los proveedores usan legítimamente la dirección de un hotel como domicilio\n          // de la factura. Solo se marca leve si no coincide con NINGUNA dirección Alda\n          // conocida (dato realmente ajeno/desactualizado).\n          const dirFacNorm = normalizar(dirFiscalFac);\n          let mejorSim = jaccard(dirFacNorm, normalizar(dirComp));\n          try {\n            for (const h of hoteles) {\n              const hj = h.json || h;\n              const dh = hj.direccion_odoo || hj.contact_address_complete || '';\n              if (dh) mejorSim = Math.max(mejorSim, jaccard(dirFacNorm, normalizar(dh)));\n            }\n          } catch(e) {}\n          if(mejorSim < 0.45){\n            erroresLeves.push('Direccion fiscal de la factura no coincide con ninguna direccion Alda conocida (sede o hoteles): factura=\"'+dirFiscalFac+'\" — verificar');\n          }\n        }\n      }\n    }\n  } catch(e){}\n}\n\nif(soloEnlace){\n  erroresGraves.length = 0;\n  erroresLeves.length = 0;\n  // Tres casuísticas distintas para que quien revisa sepa exactamente qué hacer,\n  // sin tener que abrir el correo original a ciegas:\n  const requierePortal = datosIA.requiere_acceso_portal === true;\n  let msgEnlace;\n  if(enlaceDescarga){\n    msgEnlace = 'Factura recibida SIN adjunto: el proveedor la envía mediante enlace de descarga. Descárgala manualmente: ' + enlaceDescarga;\n  } else if(requierePortal){\n    msgEnlace = 'Factura recibida SIN adjunto NI enlace de descarga: el proveedor pide acceder a su plataforma/portal con credenciales propias para consultarla. Revisar el correo original e iniciar sesión en el sitio del proveedor.';\n  } else {\n    msgEnlace = 'Factura recibida SIN adjunto: no se ha detectado ningún enlace de descarga en el correo. Revisar el email original manualmente.';\n  }\n  erroresGraves.push(msgEnlace);\n}\nconst tieneErrorGrave = erroresGraves.length > 0;\nconst tieneErrorLeve  = erroresLeves.length > 0;\nconst necesitaAprobacion = tieneErrorGrave || tieneErrorLeve || (esCostesGenerales && motivoRevision === 'factura_dirigida_a_sociedad');\n\nconst requiere = tieneErrorGrave;\nconst subidaConRevision = mejorMatch && !matchSociedad && !COSTES_GENERALES.some(cg => cg.codigo === codigoHotelDW);\nlet bannerStyle, bannerTxt;\nif(modoMultiplesCentros || (codigoHotelDW && COSTES_GENERALES.some(cg => cg.codigo === codigoHotelDW))){\n  bannerStyle = 'background:#663300;color:#fff';\n  bannerTxt = '\\u26a0 Asignado a Costes Generales \\u2014 Revisi\\u00f3n Obligatoria';\n} else if(subidaConRevision){\n  bannerStyle = 'background:#996600;color:#fff';\n  bannerTxt = '\\u26a0 Subido con revisi\\u00f3n necesaria \\u2014 Hotel/Sociedad no coinciden';\n} else if(requiere){\n  bannerStyle = 'background:#111;color:#fff';\n  bannerTxt = '\\u26a0 Requiere revisi\\u00f3n manual';\n} else {\n  bannerStyle = 'background:#f0f0f0;color:#111;border:1px solid #111';\n  bannerTxt = '\\u2713 Procesado correctamente \\u2014 Nivel ' + nivelSeguridad;\n}\n\nconst fmt = v => v != null ? Number(v).toFixed(2) + ' €' : '—';\nconst row = (label, value) => value ? `<tr><td style=\"padding:3px 0;width:38%;color:#666;font-size:9px;font-weight:bold;text-transform:uppercase\">${label}</td><td style=\"padding:3px 0;font-size:10px;color:#111\">${value}</td></tr>` : '';\nconst iva = Array.isArray(datosIA.iva_desglose)\n  ? datosIA.iva_desglose.map(i => `<tr><td style=\"padding:4px 0;color:#555;font-size:10px\">${i.tipo}% IVA</td><td style=\"padding:4px 0;text-align:right;font-size:10px\">${i.cuota != null ? Number(i.cuota).toFixed(2) + ' €' : '—'}</td></tr>`).join('')\n  : '';\n\nconst html = `<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body style=\"font-family:Arial,Helvetica,sans-serif;margin:0;padding:28px 36px;color:#111;font-size:10px\">\n  <p style=\"font-size:14px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;margin:0 0 2px 0;border-bottom:2px solid #111;padding-bottom:6px\">Resumen de procesamiento</p>\n  <p style=\"font-size:8px;color:#888;margin:0 0 14px 0;text-align:right\">Alda Hotels &middot; ${new Date().toISOString().split('T')[0]}</p>\n  <p style=\"margin:0 0 3px 0;font-size:8px;font-weight:bold;text-transform:uppercase;letter-spacing:0.8px;color:#888;border-bottom:1px solid #ddd;padding-bottom:3px\">Hotel identificado en Odoo</p>\n  <p style=\"margin:0 0 1px 0;font-size:13px;font-weight:bold\">${mejorMatch?.nombre_limpio ?? datosIA.hotel_destino ?? '\\u2014'}</p>\n  <p style=\"margin:0 0 2px 0;font-size:9px;color:#555\">${mejorMatch?.sociedad ?? ''}</p>\n  <p style=\"margin:0 0 12px 0;font-size:8.5px;color:#666\">ID: ${mejorMatch?.odoo_id ?? '\\u2014'} &nbsp;&bull;&nbsp; ${motivoLog}</p>\n  <p style=\"font-size:8px;font-weight:bold;text-transform:uppercase;letter-spacing:0.8px;color:#888;margin:0 0 4px 0;border-bottom:1px solid #ddd;padding-bottom:3px\">Proveedor</p>\n  <p style=\"margin:0 0 2px 0;font-size:11px;font-weight:bold\">${datosIA.proveedor_nombre ?? '\\u2014'}</p>\n  <table style=\"width:100%;border-collapse:collapse;margin-bottom:12px\">\n    ${row('N\\u00famero', datosIA.factura_numero)}\n    ${row('Fecha', datosIA.factura_fecha)}\n    ${row('Concepto', datosIA.concepto || datosIA.direccion_instalacion)}\n  </table>\n  <table style=\"width:100%;border-collapse:collapse;margin-bottom:16px;border-top:1px solid #ddd\">\n    <tr><td style=\"padding:5px 0;color:#555;font-size:10px\">Base imponible</td><td style=\"padding:5px 0;text-align:right;font-size:10px\">${fmt(datosIA.base_imponible)}</td></tr>\n    ${iva}\n    <tr style=\"border-top:2px solid #111\"><td style=\"padding:6px 0 0 0;font-size:12px;font-weight:bold\">Total factura</td><td style=\"padding:6px 0 0 0;text-align:right;font-size:13px;font-weight:bold\">${fmt(datosIA.importe_total)}</td></tr>\n  </table>\n  <p style=\"margin:0 0 10px 0;text-align:center;padding:8px;font-size:9px;font-weight:bold;text-transform:uppercase;letter-spacing:0.5px;${bannerStyle}\">${bannerTxt}</p>\n</body></html>`;\nconst b64 = Buffer.from(html).toString('base64');\n\n// MAPA DINÁMICO DATAWAREHOUSE (Sin nombres fijos)\n// Nombres EXACTOS del endpoint (hotelcodes.json) — id -> nombre. Fuente principal\n// del campo 'hotel'; asegura el string \"codigo. Nombre\" identico al esperado.\nconst HOTEL_NAMES = {\"012\":\"Coste General Consultores Hoteleros Integrales S.L\",\"100\":\"Coste General Alda Compostela S.L\",\"101\":\"Alda O Fogar de Teodomiro\",\"102\":\"Alda Casco Antiguo\",\"103\":\"Alda Centro León\",\"106\":\"Hotel Alda Algalia\",\"107\":\"Alda Barrio Húmedo\",\"108\":\"Lucus\",\"109\":\"Alda San Carlos\",\"110\":\"Alda Pilgrim León\",\"111\":\"Alda Catedral\",\"112\":\"Alda Avenida\",\"113\":\"Alda Vía León\",\"114\":\"Alda Bonaval\",\"115\":\"Alda San Bieito\",\"116\":\"Alda Camiño Inglés\",\"117\":\"Alda Vía de la Plata Rooms\",\"118\":\"Alda Fogar Natural\",\"119\":\"Alda Pilgrim Astorga\",\"200\":\"Coste General Alda Castilla S.L\",\"201\":\"Alda Entrearcos\",\"202\":\"Alda Centro Palencia\",\"203\":\"Alda Fogar Natural\",\"204\":\"Alda Cardeña\",\"205\":\"Alda Palencia Plaza\",\"206\":\"Alda Centro Ponferrada\",\"207\":\"Alda Ciudad de Soria\",\"208\":\"Alda Estella\",\"209\":\"Alda Río Duero\",\"210\":\"Alda Centro Zaragoza\",\"211\":\"Alda Jolio Jaca\",\"213\":\"Alda Pilgrim Ponferrada\",\"214\":\"Alda Centro Pamplona\",\"215\":\"Alda Zaragoza Independencia\",\"216\":\"Alda Mercado de Zamora\",\"217\":\"Alda Río Tormes\",\"218\":\"Alda Ciudad de Toro\",\"219\":\"Alda Castillo de Olite\",\"220\":\"Alda Malvasía\",\"221\":\"Alda Route 42\",\"222\":\"Alda Mirador del Moncayo\",\"223\":\"Alda Puerto Seco\",\"224\":\"Alda Valladolid Sur\",\"225\":\"Zeta Students Burgos\",\"226\":\"Alda Centro Zamora\",\"227\":\"Alda Soria Rooms\",\"228\":\"Apartamentos Alda Palencia Catedral\",\"229\":\"Alda Peñafiel\",\"230\":\"Alda Posada de Egues\",\"231\":\"Alda Triskel\",\"232\":\"Alda Nueva Castilla\",\"233\":\"Alda El Espinar\",\"234\":\"Alda Guijuelo\",\"235\":\"Alda A Boira\",\"236\":\"Alda Plaza Mayor Toro\",\"237\":\"Alda Ruta Castilla\",\"238\":\"Alda Ciudad de Corella\",\"300\":\"Coste General Alda Rias Baixas S.L\",\"301\":\"Alda Bueumar\",\"302\":\"Alda Estación Vigo\",\"303\":\"Alda Puerta del Sol\",\"304\":\"Alda Porta do Sol\",\"305\":\"Alda Estación Pontevedra\",\"306\":\"Alda Estación Ourense\",\"307\":\"Alda Santa Tecla\",\"308\":\"Alda Vía Norte\",\"309\":\"Alda Lalín\",\"310\":\"Alda Palas de Rei\",\"312\":\"Alda Centro Pontevedra\",\"313\":\"Alda Carril\",\"314\":\"Alda Castelao\",\"315\":\"Alda Boiro\",\"316\":\"Alda Barraña Playa\",\"317\":\"Apartamentos Alda O Grove\",\"318\":\"Alda Alpina\",\"319\":\"Alda Ribeira\",\"320\":\"Alda Xinzo\",\"321\":\"Alda Altiana\",\"400\":\"Coste General Hoteles Rias Altas S.L\",\"401\":\"Alda Puerta Coruña\",\"402\":\"Alda Santa Cristina\",\"403\":\"Alda Sada Marina\",\"404\":\"Apartamentos Alda Santa Cristina\",\"405\":\"Alda El Suizo\",\"406\":\"Hotel Agüera\",\"407\":\"Alda Palacio Valdés\",\"408\":\"Alda Galería Coruña\",\"409\":\"Alda Pasaje\",\"410\":\"Alda Centro Oviedo\",\"411\":\"Alda Estación Oviedo\",\"412\":\"Alda Miramar\",\"413\":\"Alda Orzán\",\"414\":\"Alda Alborán Rooms\",\"415\":\"Alda Don Carlos\",\"416\":\"Hotel Coruñamar\",\"417\":\"Alda Puerto Calderón\",\"418\":\"Alda Cabanas Playa\",\"419\":\"Alda Fogar do Mariñeiro\",\"420\":\"Alda Triacastela\",\"421\":\"Alda Cabanas Nature\",\"422\":\"Alda Narón\",\"423\":\"Alda Carballo\",\"424\":\"Alda Corcubión\",\"425\":\"Alda Arteixo\",\"500\":\"Coste General Alda Hostels Hostelería S.L\",\"501\":\"Garfo Sta. Trega\",\"502\":\"Garfo Puerto Seco\",\"503\":\"Garfo Cocina Central\",\"504\":\"Coffe Bakers Orzán\",\"505\":\"Garfo Sada\",\"506\":\"Garfo Carril\",\"507\":\"Garfo Cabanas\",\"600\":\"Coste general Obedientrophy Unipessoal Lda\",\"601\":\"Valença do Minho\",\"700\":\"Coste general Alda Hotels Bavaro\",\"701\":\"Alda Bavaro\",\"800\":\"Coste general Restauradores de Comida Atlántica S.L\",\"801\":\"Taberna Central\",\"802\":\"A Nosa Taberna Corrubedo\",\"803\":\"A Nosa Taberna Coruña\",\"804\":\"A Nosa Taberna Compostela\",\"805\":\"A Nosa Taberna Carril\",\"806\":\"Alda Corrubedo\",\"807\":\"A Nosa Taberna Palas de Rei\",\"900\":\"Costes Generales Niuco Homes S.L\",\"901\":\"IH Ciudad de Valladolid\",\"902\":\"IH Ciudad del Cine\",\"903\":\"IH Ciudad de Avilés\",\"904\":\"IH Felipe Prieto\",\"905\":\"IH Fogar Natural\",\"906\":\"IH Santa Crisitina\",\"907\":\"IH Porta do Sol\",\"908\":\"IH Palencia Catedral\"};\nlet dwHotel = 'PENDIENTE';\nif(codigoHotelDW){\n  const nombreApp = HOTEL_NAMES[codigoHotelDW] || mejorMatch?.nombre_limpio || 'Hotel Desconocido';\n  dwHotel = codigoHotelDW + '. ' + nombreApp;\n}\n\n// Forma de pago -> codigo oficial DocuWare. Default 00 (sin informacion).\n// 00 sin info | 01 efectivo | 02 transferencia | 03 domiciliacion | 04 tarjeta | 05 cheque\nlet dwFpago = '00';\n{\n  const fp = normalizar(datosIA.forma_pago || datosIA.forma_pago_detalle || '');\n  if(/domicil|adeudo|recibo|iban|cargo en cuenta/.test(fp)) dwFpago = '03';\n  else if(/transfer/.test(fp)) dwFpago = '02';\n  else if(/tarjeta|debito|credito|card/.test(fp)) dwFpago = '04';\n  else if(/cheque/.test(fp)) dwFpago = '05';\n  else if(/efectivo|metalico|cash/.test(fp) || datosIA.pago_efectivo === true || efectivoEnCuerpo) dwFpago = '01';\n}\n\nreturn {\n  json: { \n    odoo_id_final: mejorMatch?.odoo_id ?? null, \n    errores_graves: erroresGraves, \n    errores_leves: erroresLeves, \n    solo_enlace: soloEnlace, \n    enlace_descarga: enlaceDescarga, \n    enlaces_detectados: enlacesDetectados, \n    tiene_error_grave: tieneErrorGrave, \n    tiene_error_leve: tieneErrorLeve, \n    necesita_aprobacion: necesitaAprobacion, \n    dw_hotel: dwHotel, \n    dw_fpago: dwFpago, \n    codigo_hotel: codigoHotelDW || \"000\", \n    es_costes_generales: COSTES_GENERALES.some(cg => cg.codigo === codigoHotelDW), \n    hotel_destino_factura: datosIA.hotel_destino ?? null, \n    sociedad_destino_factura: esCostesGenerales ? (mejorMatch?.nombre_limpio ?? datosIA.hotel_destino ?? null) : (mejorMatch?.sociedad ?? null), \n    hotel_nombre_odoo: mejorMatch?.nombre_limpio ?? \"No identificado\", \n    sociedad: mejorMatch?.sociedad ?? null, \n    requiere_revision: requiere, \n    subida_con_revision: subidaConRevision, \n    motivo_revision: motivoRevision, \n    multiples_centros: modoMultiplesCentros, \n    cuerpo_requiere_atencion: cuerpoRequiereAtencion, \n    validacion: { nivel: nivelSeguridad, mensaje: motivoLog + (datosIA.match_motivo ? ' || MATCH: ' + datosIA.match_motivo : '') + (datosIA.motivo_hotel ? ' || IA: ' + datosIA.motivo_hotel : '') + (mejorMatch && _hotelesSinEnlaceSociedad.includes(mejorMatch.nombre_limpio) ? ' || AVISO DATOS ODOO: el hotel asignado no tiene enlace de sociedad (company_id) en Odoo, revisar su ficha' : '') }, \n    email_uid: (() => { try { return $('Email Trigger (IMAP)1').first().json?.attributes?.uid || 0; } catch(e) { return 0; } })(),\n    email_remitente: emailRemitente,\n    asunto_email: asuntoEmail,\n    proveedor_nombre: datosIA.proveedor_nombre ?? null, \n    factura_numero: datosIA.factura_numero ?? null, \n    factura_fecha: datosIA.factura_fecha ?? null, \n    importe_total: datosIA.importe_total ?? null, \n    pago_efectivo: false,\n    forma_pago_detalle: datosIA.forma_pago_detalle ?? null,\n    pdf_index: datosIA.pdf_index ?? null\n  },\n  binary: {\n    attachment_0: $input.item.binary?.attachment_0,\n    html_file: { data: b64, mimeType: 'text/html', fileName: 'resumen.html', fileExtension: 'html' }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        18496,
+        944
+      ],
+      "id": "28f653fe-06cd-4a9a-9dab-98ab175fea9d",
+      "name": "Build_HTML_Centros"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Capturar datos iniciales del email\nconst trigger = $('Email Trigger (IMAP)1').item.json;\nconst now = new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });\n\nconst remitente = trigger.from?.value?.[0]?.address || \n                  trigger.from?.address || \n                  String(trigger.from || '');\nconst asunto = trigger.subject || '';\nconst adjunto = trigger.attachments?.[0]?.filename || \n                trigger.attachments?.[0]?.name || 'Sin adjunto';\n\nreturn {\n  json: {\n    log_fecha_recepcion: now,\n    log_email_remitente: remitente,\n    log_asunto_email: asunto,\n    log_nombre_adjunto: adjunto\n  },\n  binary: $input.item.binary\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        14912,
+        1040
+      ],
+      "id": "b98da1e8-0e8a-4591-83ab-0c12f2dac2de",
+      "name": "Log_Inicio"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mover email no reconocido a Requiere Revision\nconst { ImapFlow } = require('imapflow');\n\nlet uid = null;\ntry {\n  uid = $('Email Trigger (IMAP)1').item.json.attributes?.uid ||\n        $('Email Trigger (IMAP)1').item.json.uid || null;\n} catch(e) {}\n\nif(!uid) {\n  return [{ json: { resultado: 'Sin UID — no se puede mover' } }];\n}\n\nconst client = new ImapFlow({\n  host: 'gestionalda.es',\n  port: 993,\n  secure: true,\n  auth: {\n    user: 'facturasproveedores@aldahotels.com',\n    pass: 'AdtPr@72'\n  },\n  logger: false\n});\n\ntry {\n  await client.connect();\n  await client.mailboxOpen('INBOX');\n  await client.messageMove(String(uid), 'Requiere Revision', { uid: true });\n  await client.logout();\n  return [{ json: { resultado: `Email ${uid} movido a Requiere Revision` } }];\n} catch(e) {\n  try { await client.logout(); } catch(_) {}\n  return [{ json: { resultado: 'Error: ' + e.message, uid } }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        18944,
+        704
+      ],
+      "id": "d0d28212-6a73-4566-a8b6-4e5d7be63161",
+      "name": "Mover_Sin_Datos_IMAP"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "18vKUC0EflquVaFVNrWza-GJtK8yqW12Eo5NZ_EXzywI",
+          "mode": "list",
+          "cachedResultName": "Log_Facturas_PRO",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/18vKUC0EflquVaFVNrWza-GJtK8yqW12Eo5NZ_EXzywI/edit?usp=sharing"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 0,
+          "mode": "list",
+          "cachedResultName": "Hoja 1",
+          "cachedResultUrl": ""
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {
+            "Hotel_Destino": "={{$json.hotel_destino}}",
+            "Sociedad_Destino": "={{$json.sociedad_destino}}",
+            "Fecha_Recepcion": "={{$json.fecha_recepcion}}",
+            "Email_Remitente": "={{$json.email_remitente}}",
+            "Asunto_Email": "={{$json.asunto_email}}",
+            "Nombre_Adjunto": "={{$json.nombre_adjunto}}",
+            "Fecha_OCR": "={{$json.fecha_ocr}}",
+            "Factura_Numero": "={{$json.factura_numero}}",
+            "Proveedor": "={{$json.proveedor}}",
+            "Factura_Fecha": "={{$json.factura_fecha}}",
+            "Importe_Total": "={{$json.importe_total}}",
+            "Forma_Pago_Detectada": "={{$json.forma_pago_detectada}}",
+            "Hotel_Odoo": "={{$json.hotel_odoo}}",
+            "Sociedad": "={{$json.sociedad}}",
+            "Codigo_Hotel": "={{$json.codigo_hotel}}",
+            "Nivel_Validacion": "={{$json.nivel_validacion}}",
+            "Metodo_Identificacion": "={{$json.metodo_identificacion}}",
+            "Fecha_DocuWare": "={{$json.fecha_docuware}}",
+            "DW_Hotel": "={{$json.dw_hotel}}",
+            "DW_FPago": "={{$json.dw_fpago}}",
+            "Resultado_DocuWare": "={{$json.resultado_docuware}}",
+            "Estado_Final": "={{$json.estado_final}}",
+            "Motivo_Revision": "={{$json.motivo_revision}}",
+            "Carpeta_IMAP": "={{$json.carpeta_imap}}",
+            "Fecha_Fin": "={{$json.fecha_fin}}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Hotel_Destino",
+              "displayName": "Hotel_Destino",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Sociedad_Destino",
+              "displayName": "Sociedad_Destino",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Fecha_Recepcion",
+              "displayName": "Fecha_Recepcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Email_Remitente",
+              "displayName": "Email_Remitente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Asunto_Email",
+              "displayName": "Asunto_Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Nombre_Adjunto",
+              "displayName": "Nombre_Adjunto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Fecha_OCR",
+              "displayName": "Fecha_OCR",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Factura_Numero",
+              "displayName": "Factura_Numero",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Proveedor",
+              "displayName": "Proveedor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Factura_Fecha",
+              "displayName": "Factura_Fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Importe_Total",
+              "displayName": "Importe_Total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Forma_Pago_Detectada",
+              "displayName": "Forma_Pago_Detectada",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Hotel_Odoo",
+              "displayName": "Hotel_Odoo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Sociedad",
+              "displayName": "Sociedad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Codigo_Hotel",
+              "displayName": "Codigo_Hotel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Nivel_Validacion",
+              "displayName": "Nivel_Validacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Metodo_Identificacion",
+              "displayName": "Metodo_Identificacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Fecha_DocuWare",
+              "displayName": "Fecha_DocuWare",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "DW_Hotel",
+              "displayName": "DW_Hotel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "DW_FPago",
+              "displayName": "DW_FPago",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Resultado_DocuWare",
+              "displayName": "Resultado_DocuWare",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Estado_Final",
+              "displayName": "Estado_Final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Motivo_Revision",
+              "displayName": "Motivo_Revision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Carpeta_IMAP",
+              "displayName": "Carpeta_IMAP",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Fecha_Fin",
+              "displayName": "Fecha_Fin",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        18720,
+        704
+      ],
+      "id": "e3ed817c-a1ac-4763-b69f-8715f27b63df",
+      "name": "Sheets_Sin_Datos",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "TtPsOhNUw6FPJ0g9",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Documento no reconocido como factura — preparar log\nconst trigger = $('Email Trigger (IMAP)1').item.json;\nconst now = new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });\n\nconst emailRemitente = trigger.from?.value?.[0]?.address || trigger.from?.address || String(trigger.from || '');\nconst asuntoEmail    = trigger.subject || '';\nconst nombreAdjunto  = trigger.attachments?.[0]?.filename || trigger.attachments?.[0]?.name || '';\nconst fechaRecepcion = trigger.date\n  ? new Date(trigger.date).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })\n  : now;\n\nreturn {\n  json: {\n    hotel_destino:         '—',\n    sociedad_destino:      '—',\n    fecha_recepcion:       fechaRecepcion,\n    email_remitente:       emailRemitente,\n    asunto_email:          asuntoEmail,\n    nombre_adjunto:        nombreAdjunto,\n    fecha_ocr:             now,\n    factura_numero:        '—',\n    proveedor:             emailRemitente,\n    factura_fecha:         '—',\n    importe_total:         '—',\n    forma_pago_detectada:  '—',\n    hotel_odoo:            '—',\n    sociedad:              '—',\n    codigo_hotel:          '—',\n    nivel_validacion:      0,\n    metodo_identificacion: 'No reconocido como factura',\n    fecha_docuware:        '—',\n    dw_hotel:              '—',\n    dw_fpago:              '—',\n    resultado_docuware:    'No procesado',\n    estado_final:          'No reconocido como factura',\n    motivo_revision:       'La IA no pudo extraer número de factura',\n    carpeta_imap:          'Requiere Revision',\n    fecha_fin:             now\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        18496,
+        704
+      ],
+      "id": "a09f05ac-f20c-428c-b168-354d294cd2b6",
+      "name": "Log_Sin_Datos"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.factura_numero }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              },
+              "id": "bfd96d45-132e-4c76-972b-78d68377f7e9"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        18272,
+        752
+      ],
+      "id": "96478ab5-076c-4ea7-8a67-c441f71ff1a6",
+      "name": "IF_Datos_Extraidos"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mover email a carpeta IMAP usando imapflow\nconst { ImapFlow } = require('imapflow');\n\nconst carpeta = $json.mover_a_carpeta;\nconst uid = $json.email_uid;\n\nif(!carpeta || !uid) {\n  return [{ json: { resultado: 'Sin carpeta o UID — no se mueve', carpeta, uid } }];\n}\n\nconst client = new ImapFlow({\n  host: 'gestionalda.es',\n  port: 993,\n  secure: true,\n  auth: {\n    user: 'facturasproveedores@aldahotels.com',\n    pass: 'AdtPr@72'\n  },\n  logger: false\n});\n\n// NOTA: la creación automática de la carpeta destino (mailboxCreate) se quitó\n// deliberadamente de aquí. Crear una carpeta que YA EXISTE puede dejar la\n// conexión IMAP en un estado inconsistente para el comando MOVE que viene justo\n// después, rompiendo el movimiento incluso a carpetas que antes funcionaban.\n// Es un problema de configuración de una sola vez: las carpetas deben existir\n// de antemano en el servidor de correo (Procesadas, Requiere Revision, Subido\n// con Revision Necesaria) — no algo que deba arriesgarse en cada ejecución.\ntry {\n  await client.connect();\n  await client.mailboxOpen('INBOX');\n  await client.messageMove(String(uid), carpeta, { uid: true });\n  await client.logout();\n  return [{ json: { resultado: `Email ${uid} movido a ${carpeta}`, carpeta, uid } }];\n} catch(e) {\n  try { await client.logout(); } catch(_) {}\n  // Diagnóstico explícito: si la carpeta no existe, el mensaje de imapflow suele\n  // incluir 'NONEXISTENT' o 'TRYCREATE'. Se deja visible tal cual para poder\n  // distinguir \"no existe la carpeta\" de otros fallos (auth, red, etc.).\n  return [{ json: { resultado: 'Error: ' + e.message, uid, carpeta, error_detalle: String(e.responseText || e.response || '') } }];\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        22304,
+        944
+      ],
+      "id": "6bb0f0fd-baac-434e-8860-bcca10b26db9",
+      "name": "Mover_Email_IMAP"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mover email a la carpeta correcta según el resultado\nconst d = $('Build_HTML_Centros').item.json;\n\nlet carpeta = null;\n\n// Requiere Revision: no se pudo identificar el hotel en absoluto\nif(d.requiere_revision && !d.subida_con_revision){\n  carpeta = 'Requiere Revision';\n}\n// Subido con Revision Necesaria: se subió pero hay algo que revisar\n// - Hotel y sociedad no coinciden\n// - Cuerpo del email requiere atención\n// NO incluir multiples_centros si se resolvió a costes generales\nelse if(d.subida_con_revision || d.cuerpo_requiere_atencion){\n  carpeta = 'Subido con Revision Necesaria';\n}\n// Si múltiples centros pero NO se resolvió (sin sociedad identificada) → Requiere Revision\nelse if(d.multiples_centros && !d.es_costes_generales && d.codigo_hotel == null){\n  carpeta = 'Requiere Revision';\n}\n// Todo OK (incluyendo costes generales resueltos y avisos leves ya notificados) → Procesadas\nelse {\n  carpeta = 'Procesadas';\n}\n\n// .first() en vez de .item: hay EXACTAMENTE un item de disparador por ejecución\n// (1 email = 1 trigger), así que .first() es siempre correcto aquí y, a\n// diferencia de .item (pairedItem), no depende de que la cadena de referencias\n// se mantenga intacta a través de todos los nodos intermedios — elimina un\n// punto de fallo silencioso para el UID del correo.\nlet emailUid = null;\nlet _uidDiag = '';\ntry {\n  const trg = $('Email Trigger (IMAP)1').first().json;\n  emailUid = trg?.attributes?.uid ?? trg?.uid ?? trg?.messageId ?? null;\n  if (emailUid == null) _uidDiag = 'sin uid en trigger, claves=' + Object.keys(trg || {}).join('|');\n} catch(e) { _uidDiag = 'error leyendo trigger: ' + e.message; }\n\nreturn {\n  json: {\n    ...d,\n    mover_a_carpeta: carpeta,\n    email_uid: emailUid,\n    // mover_necesario ahora exige TAMBIÉN que haya un uid resoluble — antes solo\n    // miraba si había carpeta, así que un fallo de uid quedaba invisible.\n    mover_necesario: carpeta !== null && emailUid != null,\n    _uid_diagnostico: _uidDiag\n  },\n  binary: $input.item.binary\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        22080,
+        944
+      ],
+      "id": "40ab7f34-7456-49f1-a941-60a4568a2394",
+      "name": "Prep_Mover_Email"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "18vKUC0EflquVaFVNrWza-GJtK8yqW12Eo5NZ_EXzywI",
+          "mode": "list",
+          "cachedResultName": "Log_Facturas_PRO",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/18vKUC0EflquVaFVNrWza-GJtK8yqW12Eo5NZ_EXzywI/edit?usp=sharing"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 0,
+          "mode": "list",
+          "cachedResultName": "Hoja 1",
+          "cachedResultUrl": ""
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "hotel_destino",
+              "displayName": "hotel_destino",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "sociedad_destino",
+              "displayName": "sociedad_destino",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fecha_recepcion",
+              "displayName": "fecha_recepcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "email_remitente",
+              "displayName": "email_remitente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "asunto_email",
+              "displayName": "asunto_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "nombre_adjunto",
+              "displayName": "nombre_adjunto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fecha_ocr",
+              "displayName": "fecha_ocr",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "factura_numero",
+              "displayName": "factura_numero",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "proveedor",
+              "displayName": "proveedor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "factura_fecha",
+              "displayName": "factura_fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "importe_total",
+              "displayName": "importe_total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "forma_pago_detectada",
+              "displayName": "forma_pago_detectada",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "hotel_odoo",
+              "displayName": "hotel_odoo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "sociedad",
+              "displayName": "sociedad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "codigo_hotel",
+              "displayName": "codigo_hotel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "nivel_validacion",
+              "displayName": "nivel_validacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "metodo_identificacion",
+              "displayName": "metodo_identificacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fecha_docuware",
+              "displayName": "fecha_docuware",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "dw_hotel",
+              "displayName": "dw_hotel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "dw_fpago",
+              "displayName": "dw_fpago",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "resultado_docuware",
+              "displayName": "resultado_docuware",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "estado_final",
+              "displayName": "estado_final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "motivo_revision",
+              "displayName": "motivo_revision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "carpeta_imap",
+              "displayName": "carpeta_imap",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fecha_fin",
+              "displayName": "fecha_fin",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "enlace_descarga",
+              "displayName": "enlace_descarga",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "_factura_original",
+              "displayName": "_factura_original",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "_acuse_data",
+              "displayName": "_acuse_data",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "_acuse_pdf_b64",
+              "displayName": "_acuse_pdf_b64",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        20512,
+        944
+      ],
+      "id": "34630e86-aea4-40e3-8b49-9183d83d535e",
+      "name": "Sheets_Centros",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "TtPsOhNUw6FPJ0g9",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Preparar fila completa para Google Sheets\nconst d = $('Build_HTML_Centros').item.json;\nconst dw = $input.item.json;\nconst now = new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });\n\n// Datos del email original\nlet emailRemitente = '', asuntoEmail = '', nombreAdjunto = '', fechaRecepcion = now;\ntry {\n  const trigger = $('Email Trigger (IMAP)1').first().json;\n  emailRemitente  = trigger.from?.value?.[0]?.address || trigger.from?.address || String(trigger.from || '');\n  asuntoEmail     = trigger.subject || '';\n  fechaRecepcion  = trigger.date\n    ? new Date(trigger.date).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })\n    : now;\n  try {\n    nombreAdjunto = $('Detect_PDF_Adjunto').all()[$itemIndex]?.json.detected_pdf_name || \n                    trigger.attachments?.[0]?.filename || '';\n    if(nombreAdjunto.startsWith('=?') && nombreAdjunto.includes('?B?')){\n      const b64 = nombreAdjunto.replace(/=\\?UTF-8\\?B\\?(.+?)\\?=/gi, '$1');\n      try { nombreAdjunto = Buffer.from(b64, 'base64').toString('utf-8'); } catch(e) {}\n    }\n  } catch(e) {\n    nombreAdjunto = trigger.attachments?.[0]?.filename || '';\n  }\n} catch(e) {}\n\n// Resultado DocuWare\nlet resultadoDW = 'OK';\ntry {\n  const dwResp = $('DocuWare_Centros').item.json;\n  if(dwResp.error) resultadoDW = 'ERROR: ' + dwResp.error;\n  else if(dwResp.message && dwResp.message !== 'OK') resultadoDW = dwResp.message;\n} catch(e) {}\n\n// Estado final\nlet estadoFinal = 'Procesado OK';\nif(d.tiene_error_leve)                              estadoFinal = 'Procesado con avisos';\nelse if(d.multiples_centros && d.es_costes_generales) estadoFinal = 'Múltiples centros → Costes Generales';\nelse if(d.multiples_centros)                          estadoFinal = 'Múltiples centros — revisión';\nelse if(d.cuerpo_requiere_atencion)                   estadoFinal = 'Cuerpo email requiere atención';\n\n// Motivo revisión — solo si hay algo que reportar\nconst motivoRevision = [\n  ...(d.errores_leves||[]).map(e => 'LEVE: ' + e)\n].join('; ');\n\n// Predecir la carpeta final (misma lógica que Prep_Mover_Email, que se ejecuta\n// más tarde en la cadena — d.mover_a_carpeta todavía no existe en este punto).\nlet carpetaImap;\nif(d.requiere_revision && !d.subida_con_revision){\n  carpetaImap = 'Requiere Revision';\n} else if(d.subida_con_revision || d.cuerpo_requiere_atencion){\n  carpetaImap = 'Subido con Revision Necesaria';\n} else if(d.multiples_centros && !d.es_costes_generales && d.codigo_hotel == null){\n  carpetaImap = 'Requiere Revision';\n} else {\n  carpetaImap = 'Procesadas';\n}\n\nreturn {\n  json: {\n    hotel_destino:         d.hotel_destino_factura || '',\n    sociedad_destino:      d.sociedad_destino_factura || d.sociedad || '',\n    fecha_recepcion:       fechaRecepcion,\n    email_remitente:       emailRemitente,\n    asunto_email:          asuntoEmail,\n    nombre_adjunto:        nombreAdjunto,\n    fecha_ocr:             now,\n    factura_numero:        d.factura_numero || '',\n    proveedor:             d.proveedor_nombre || '',\n    factura_fecha:         d.factura_fecha || '',\n    importe_total:         d.importe_total ?? '',\n    forma_pago_detectada:  d.forma_pago_detalle || '',\n    hotel_odoo:            d.hotel_nombre_odoo || '',\n    sociedad:              d.sociedad || '',\n    codigo_hotel:          String(d.codigo_hotel || ''),\n    nivel_validacion:      d.validacion?.nivel ?? 0,\n    metodo_identificacion: (d.validacion?.mensaje || '') + (dw._tiene_adjunto_original === false ? ' || PDF: sin adjunto original — ' + (dw._diag_pdf || 'sin diagnostico') : ''),\n    fecha_docuware:        now,\n    dw_hotel:              d.dw_hotel || '',\n    dw_fpago:              d.dw_fpago || '',\n    resultado_docuware:    resultadoDW,\n    estado_final:          estadoFinal,\n    motivo_revision:       motivoRevision,\n    carpeta_imap:          carpetaImap,\n    fecha_fin:             now\n  },\n  binary: $('Merge_PDFs_Centros').item.binary\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20288,
+        944
+      ],
+      "id": "3e3f2406-4fa1-4640-9afa-f55a8707f3f5",
+      "name": "Prep_Sheet_Centros"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Preparar parámetros para DocuWare — dw_hotel ya calculado en Build_HTML\nlet d = {};\ntry { d = $('Build_HTML_Centros').item.json; } catch(e) { d = $input.item.json; }\n\nconst nota  = (d.proveedor_nombre || '').substring(0, 50);\nconst nota2 = (d.factura_numero   || '').substring(0, 50);\n\n// Nombre limpio para DocuWare. El binario que sale del merge llega como\n// \"..._merged_unsigned.pdf\"; lo renombramos al nº de factura saneado.\n// IMPORTANTE: el servidor Flask antepone \"<codigo>_<fecha>_<fpago>_\" a este\n// nombre, así que aquí enviamos solo la base. Debe acabar en .pdf para pasar\n// la validación de extensión del servidor.\nconst baseNombre = String(d.factura_numero || ('factura_' + Date.now()))\n  .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n  .replace(/[^A-Za-z0-9._-]/g, '_')\n  .replace(/_+/g, '_').replace(/^_|_$/g, '')\n  .replace(/\\.pdf$/i, '');\nconst dwFilename = baseNombre + '.pdf';\n\nconst binIn  = $('Merge_PDFs_Centros').item.binary || {};\nconst pdfBin = { ...(binIn.pdf_final || {}) };\npdfBin.fileName      = dwFilename;\npdfBin.fileExtension = 'pdf';\npdfBin.mimeType      = 'application/pdf';\n\nreturn {\n  json: { ...d, dw_nota: nota, dw_nota2: nota2, dw_filename: dwFilename },\n  binary: { pdf_final: pdfBin }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        19840,
+        944
+      ],
+      "id": "fe4c1cff-ba68-4d11-bbcf-4fa43cc98550",
+      "name": "Prep_DocuWare_Centros"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://facturas.gestionalda.es/api/ftp",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Token",
+              "value": "Ald4.2026.D0cuwar3"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "pdf_final"
+            },
+            {
+              "name": "hotel",
+              "value": "={{ $json.dw_hotel }}"
+            },
+            {
+              "name": "fpago",
+              "value": "={{ $json.dw_fpago }}"
+            },
+            {
+              "name": "nota",
+              "value": "={{ $json.dw_nota }}"
+            },
+            {
+              "name": "nota2",
+              "value": "={{ $json.dw_nota2 }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        20064,
+        944
+      ],
+      "id": "1071de21-5c0d-49f0-bb5c-ccb213ea496b",
+      "name": "DocuWare_Centros",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://pdf.gestionalda.com/api/v1/general/merge-pdfs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "fileInput",
+              "inputDataFieldName": "attachment_0"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "fileInput",
+              "inputDataFieldName": "summary_pdf"
+            },
+            {
+              "name": "sortAfterMerge",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "pdf_final"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        19392,
+        848
+      ],
+      "id": "7b3bac96-5996-4f46-9338-e0f6dda5f601",
+      "name": "Merge_PDFs_Centros",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "D4QTRIRcAhNEo1GL",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://pdf.gestionalda.com/api/v1/convert/html/pdf",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "fileInput",
+              "inputDataFieldName": "html_file"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "summary_pdf"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        18720,
+        944
+      ],
+      "id": "fa606a86-e626-4071-80af-e2b9e5a89963",
+      "name": "Generate_Summary_PDF_Centros",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "D4QTRIRcAhNEo1GL",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (let _idx = 0; _idx < items.length; _idx++) {\n  const item = items[_idx];\n  let raw = item.json.output || item.json.text || item.json.content || '';\n  if (typeof raw !== 'string') raw = JSON.stringify(raw);\n\n  let parsed = null;\n  let errorMsg = null;\n\n  try {\n    // 1. Eliminar bloques markdown ```json ... ``` o ``` ... ```\n    let clean = raw\n      .replace(/^```json\\s*/i, '')\n      .replace(/^```\\s*/i, '')\n      .replace(/```\\s*$/i, '')\n      .trim();\n\n    // 2. Extraer desde { hasta el último }\n    const start = clean.indexOf('{');\n    const end = clean.lastIndexOf('}');\n    if (start >= 0 && end > start) {\n      clean = clean.slice(start, end + 1);\n    }\n\n    // 3. Limpiar caracteres de control (excepto \\n \\r \\t en strings)\n    clean = clean.replace(/[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]/g, ' ');\n\n    parsed = JSON.parse(clean);\n    parsed.parser_error = false;\n\n  } catch (e) {\n    errorMsg = e.message;\n    \n    // Intento de rescate: regex para extraer campos clave\n    try {\n      const rescue = {};\n      const fields = [\n        'proveedor_nombre','proveedor_cif','factura_numero','factura_fecha',\n        'hotel_destino','importe_total','base_imponible','codigo_hotel_ia'\n      ];\n      for (const f of fields) {\n        const m = raw.match(new RegExp('\"' + f + '\"\\\\s*:\\\\s*\"([^\"]*)\"'));\n        if (m) rescue[f] = m[1];\n        const mNum = raw.match(new RegExp('\"' + f + '\"\\\\s*:\\\\s*([0-9.]+)'));\n        if (mNum) rescue[f] = parseFloat(mNum[1]);\n      }\n      if (Object.keys(rescue).length > 0) {\n        const _abre = (raw.match(/\\{/g) || []).length;\n        const _cierra = (raw.match(/\\}/g) || []).length;\n        rescue.parser_error = true;\n        rescue.truncado = _abre > _cierra;\n        rescue.error_msg = (rescue.truncado ? 'Respuesta de la IA truncada/incompleta (posible corte de red). ' : '') +\n                            'JSON parcialmente recuperado (' + Object.keys(rescue).filter(k=>!['parser_error','truncado','error_msg'].includes(k)).length + ' campos): ' + errorMsg;\n        rescue.raw_text = raw.substring(0, 400);\n        parsed = rescue;\n      }\n    } catch(e2) {}\n  }\n\n  if (!parsed) {\n    // Detectar específicamente TRUNCAMIENTO: la respuesta parece un JSON válido\n    // que se cortó a mitad (llaves/comillas sin cerrar), distinto de un JSON\n    // simplemente mal formado. Esto apunta a un corte de red/conexión durante\n    // la respuesta (HTTP 200 pero cuerpo incompleto) — no a un error de la IA\n    // generando el contenido, así que conviene distinguirlo en el diagnóstico.\n    const abre = (raw.match(/\\{/g) || []).length;\n    const cierra = (raw.match(/\\}/g) || []).length;\n    const comillasAbiertas = (raw.match(/(?<!\\\\)\"/g) || []).length % 2 !== 0;\n    const pareceTruncado = abre > cierra || comillasAbiertas;\n    parsed = {\n      parser_error: true,\n      truncado: pareceTruncado,\n      error_msg: (pareceTruncado ? 'Respuesta de la IA truncada/incompleta (posible corte de red a mitad de transmisión). ' : '') +\n                 (errorMsg || 'No se pudo parsear el JSON de la IA'),\n      raw_text: raw.substring(0, 400)\n    };\n  }\n\n  results.push({ json: { ...item.json, ...parsed }, binary: item.binary, pairedItem: { item: _idx } });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        17824,
+        752
+      ],
+      "id": "814b4383-edcb-465b-ade0-29a150358613",
+      "name": "Parser_JSON_Centros"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// =====================================================================\n// Match_Hotel_Determinista\n// Insertar:  Parser_JSON_Centros -> [ESTE NODO] -> IF_Datos_Extraidos\n//\n// Match hotel<->Odoo determinista, priorizando la dirección de\n// INSTALACIÓN sobre la fiscal. Sobrescribe codigo_hotel_ia y\n// confianza_hotel para que Build_HTML_Centros (PASO 0) lo consuma.\n//\n// IMPORTANTE: Code_Hoteles_JSON viene de Clean_Address, que renombra\n// los campos -> codigo_hotel, direccion_odoo, nombre_limpio, sociedad.\n// Se normaliza tolerando ambos esquemas.\n// =====================================================================\n\nconst datos = { ...$input.item.json };\ndatos.codigo_hotel_ia_original = $input.item.json.codigo_hotel_ia ?? null; // para diagnóstico\n\n// Descartar documentos que NO son factura (presupuesto/oferta/albaran/proforma).\n// Anulamos factura_numero para que IF_Datos_Extraidos los filtre y no se procesen\n// ni archiven ni generen fila en Sheets. Evita el doble procesado por email\n// con factura + presupuesto como adjuntos separados.\nif (datos.es_factura === false) {\n  return { json: { ...datos, factura_numero: null, descartado_motivo: 'no_es_factura' }, binary: $input.item.binary };\n}\n\n\n// ---------- Normalizar hoteles (tolerante a esquema crudo o limpio) ----------\nlet rawHoteles = [];\ntry { rawHoteles = $('Code_Hoteles_JSON').first().json.hoteles_odoo || []; } catch (e) {}\n\nconst norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n  .replace(/[^a-z0-9 ]/g, ' ').replace(/ +/g, ' ').trim();\n\nconst EXCLUIR_CG = ['costes generales', 'coste general', 'consultores hoteleros',\n  'garfo', 'taberna', 'gestion proyectos', 'niuco', 'restauradores'];\n\nconst HOTELES = rawHoteles.map(h => ({\n  codigo:    h.codigo_hotel || h.pms_property_code || null,\n  direccion: h.direccion_odoo || h.contact_address_complete || '',\n  nombre:    h.nombre_limpio || h.nombre_completo || h.name || '',\n  sociedad:  h.sociedad || (Array.isArray(h.company_id) ? h.company_id[1] : '') || '',\n  company_odoo_id: h.company_odoo_id ?? (Array.isArray(h.company_id) ? h.company_id[0] : null),\n  email:     h.email || ''\n})).filter(h => h.codigo && h.direccion && !EXCLUIR_CG.some(k => norm(h.nombre).includes(k)));\n\n// ---------- Parsing / scoring de direcciones ----------\nconst PROV_STOP = new Set(['coruna','la','lugo','ourense','pontevedra','espana','spain','provincia','aprox']);\nconst VIA_STOP  = new Set(['cl','c','calle','rua','r','av','avda','avenida','pz','plaza','pl','pza','ps',\n  'paseo','tr','travesia','cr','carretera','ctra','urb','urbanizacion','de','del','la','el','los','las',\n  'n','num','numero','s','bajo','sn','b','lugar','barrio','poligono','pol']);\n\nfunction parseDir(raw) {\n  const n = norm(raw);\n  const cp = (n.match(/\\b\\d{5}\\b/) || [null])[0];\n  const nums = (n.match(/\\b\\d{1,4}\\b/g) || []).filter(x => x !== cp);\n  const numero = nums.length ? nums[nums.length - 1] : null;\n  const tokens = new Set(\n    n.split(' ').filter(w => w.length >= 3 && !VIA_STOP.has(w) && !PROV_STOP.has(w) && !/^\\d+$/.test(w))\n  );\n  return { raw: n, cp, numero, tokens };\n}\nfunction dirToRaw(d) {\n  if (!d) return '';\n  if (typeof d === 'string') return d;\n  if (d.raw) return d.raw;\n  return [d.via, d.municipio, d.cp, d.provincia].filter(Boolean).join(' ');\n}\nfunction overlap(a, b) {\n  if (!a.size || !b.size) return 0;\n  let inter = 0; for (const t of a) if (b.has(t)) inter++;\n  return inter / Math.min(a.size, b.size);\n}\nfunction scoreDir(facturaRaw, hotelRaw) {\n  if (!facturaRaw || !hotelRaw) return { score: 0, why: '' };\n  const f = parseDir(facturaRaw), h = parseDir(hotelRaw);\n  let score = 0; const why = [];\n  if (f.cp && h.cp && f.cp === h.cp) { score += 45; why.push('CP'); }\n  else if (f.cp && h.cp && f.cp.slice(0, 2) === h.cp.slice(0, 2)) { score += 8; why.push('prov'); }\n  const ov = overlap(f.tokens, h.tokens);\n  if (ov > 0) { score += Math.round(ov * 45); why.push('via' + (ov * 100 | 0)); }\n  if (f.numero && h.numero && f.numero === h.numero && ov > 0) { score += 15; why.push('nº'); }\n  return { score, why: why.join('+') };\n}\n\n// ---------- Compatibilidad esquema nuevo <-> antiguo ----------\nconst dirInstalRaw = dirToRaw(datos.direccion_instalacion);\nconst dirFiscalRaw = dirToRaw(datos.direccion_fiscal || datos.hotel_direccion);\nconst razonSocial  = datos.destinatario_razon_social || datos.hotel_destino || '';\n\ndatos.hotel_destino         = razonSocial || null;\ndatos.hotel_destino_cif     = datos.destinatario_cif || datos.hotel_destino_cif || null;\ndatos.hotel_direccion       = dirFiscalRaw || datos.hotel_direccion || null;\ndatos.direccion_instalacion = dirInstalRaw || null;\n\n// ---------- Matching ----------\nconst UMBRAL_INSTALACION = 35;\nconst UMBRAL_FISCAL      = 50;\n\n// Sociedad del destinatario (para desambiguar hoteles con el mismo nombre en\n// distintas sociedades, p.ej. 'Alda Fogar Natural' existe en Compostela=118 y Castilla=203).\n// ─────────────────────────────────────────────────────────────────────\n// SOCIEDAD ANCLADA POR CIF (dato duro y fiable)\n// El CIF del destinatario de la factura identifica la sociedad sin ambigüedad.\n// Buscamos ese CIF en las compañías de Odoo (res.company.vat) para obtener la\n// sociedad autoritativa (id + nombre). A partir de ahí, un hotel \"es de la\n// sociedad correcta\" si su company_odoo_id coincide con el id de esa compañía.\n// Esto es infalible frente a la variante anterior (comparar textos de razón\n// social), que fallaba con nombres parecidos o abreviados.\n// ─────────────────────────────────────────────────────────────────────\nconst _GEN = new Set(['alda','hotel','hoteles','sociedad','limitada','anonima','unipersonal','slu','sau','sl','sa','costes','generales','general','coste']);\nconst _sigWords = s => norm(s).split(' ').filter(w => w.length >= 4 && !_GEN.has(w));\nconst normCif = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^ES/, '');\n\nlet _companies = [];\ntry { _companies = $('Code_Companies_JSON').first().json.companies || []; } catch(e) {}\n\n// Sociedad identificada por el CIF de la factura\nconst _cifFactura = normCif(datos.destinatario_cif);\nlet _socCif = null; // { id, name }\nif (_cifFactura) {\n  const comp = _companies.find(co => normCif(co.vat) === _cifFactura);\n  if (comp) _socCif = { id: comp.id, name: comp.name };\n}\n\n// Fallback por texto de la razón social (solo si no hay CIF utilizable)\nconst _socDestNorm = norm(datos.destinatario_razon_social || datos.hotel_destino || '');\nconst _wDest = new Set(_sigWords(_socDestNorm));\n\n// Sabemos la sociedad si la tenemos por CIF o, en su defecto, por texto.\nconst _sociedadConocida = !!_socCif || _wDest.size > 0;\n\nfunction _mismaSociedad(h) {\n  // 1) Vía dura: enlazar por id de compañía (CIF → company.id === hotel.company_odoo_id)\n  if (_socCif) {\n    if (h.company_odoo_id != null && String(h.company_odoo_id) === String(_socCif.id)) return true;\n    // respaldo por nombre de sociedad si el hotel no trae company_odoo_id\n    if (h.company_odoo_id == null) {\n      const wh = new Set(_sigWords(h.sociedad || ''));\n      for (const w of _sigWords(_socCif.name)) if (wh.has(w)) return true;\n    }\n    return false;\n  }\n  // 2) Vía texto (sin CIF): comparar palabras significativas de la razón social\n  if (!_wDest.size) return false;\n  const wh = new Set(_sigWords(h.sociedad || ''));\n  for (const w of _wDest) if (wh.has(w)) return true;\n  return false;\n}\n\n\n\n// Puntúa direcciones. Si se conoce la sociedad del destinatario, PREFIERE hoteles\n// de esa sociedad: primero busca el mejor dentro de la sociedad correcta; solo si\n// ninguno llega, considera el resto. Así 'San Pedro 37' + Alda Compostela → 118,\n// no 203 (mismo nombre pero sociedad Castilla).\nfunction mejorPorDireccion(dirRaw) {\n  let best = null, bestScore = 0, bestWhy = '', bestSoc = null, bestScoreSoc = 0, bestWhySoc = '';\n  for (const h of HOTELES) {\n    const r = scoreDir(dirRaw, h.direccion);\n    if (r.score > bestScore) { bestScore = r.score; best = h; bestWhy = r.why; }\n    if (_mismaSociedad(h) && r.score > bestScoreSoc) { bestScoreSoc = r.score; bestSoc = h; bestWhySoc = r.why; }\n  }\n  // Si hay un match en la sociedad correcta que supera el umbral mínimo de instalación,\n  // se prefiere aunque su score sea algo menor que un match global de otra sociedad.\n  if (bestSoc && bestScoreSoc >= 35) {\n    return { best: bestSoc, bestScore: bestScoreSoc, bestWhy: bestWhySoc + '+soc' };\n  }\n  return { best, bestScore, bestWhy };\n}\n\nlet match = null, metodo = null, score = 0, motivo = '', confianza = 'baja';\n\n// ═══════════════════════════════════════════════════════════════════════\n// MATCHING DE HOTEL — Arquitectura IA-autoritativa\n// ───────────────────────────────────────────────────────────────────────\n// La IA (Gemini) es el MATCHER PRINCIPAL: recibe la lista completa de hoteles\n// (código|nombre|dirección|sociedad) y elige el hotel razonando sobre nombre,\n// dirección de instalación y dirección fiscal a la vez. Un LLM hace ese fuzzy\n// matching mucho mejor que el solapamiento de tokens.\n//\n// El scorer determinista por dirección YA NO COMPITE: solo CONFIRMA (sube la\n// confianza si coincide con la IA) o actúa de RESERVA (cuando la IA no da\n// código). Nunca sobreescribe a la IA. Así se elimina la reconciliación\n// \"scorer vs IA\" que era la fuente de los bugs recurrentes.\n//\n// El guardarraíl de sociedad (regla dura y fiable) se aplica después en\n// Build_HTML_Centros: si la sociedad del hotel elegido no coincide con la\n// sociedad destinataria, se ignora y va a Costes Generales de la correcta.\n// ═══════════════════════════════════════════════════════════════════════\n\n// --- Señal determinista por dirección (SOLO para confirmar / reserva) ---\n// Se calcula el mejor candidato por instalación, concepto y fiscal, con\n// preferencia de sociedad. No decide por sí solo salvo que la IA calle.\n// --- Señal por dirección (instalación + concepto; NUNCA fiscal) ---\n// La dirección FISCAL de la factura es la sede social genérica (\"Costa San\n// Marcos 22\"), compartida por todas las sociedades, así que jamás debe elegir\n// un hotel concreto (producía falsos positivos como asignar San Bieito). La\n// sociedad se determina por el CIF, no por la dirección fiscal.\nfunction mejorSenalDireccion() {\n  const intentos = [];\n  if (dirInstalRaw) intentos.push(['instalacion', mejorPorDireccion(dirInstalRaw)]);\n  if (datos.concepto) intentos.push(['concepto', mejorPorDireccion(String(datos.concepto))]);\n  let mejor = null;\n  for (const [tipo, r] of intentos) {\n    if (r.best && (!mejor || r.bestScore > mejor.score)) {\n      mejor = { hotel: r.best, score: r.bestScore, why: r.bestWhy, tipo };\n    }\n  }\n  return mejor;\n}\nconst senalDir = mejorSenalDireccion();\n\n// --- Señal por NOMBRE del hotel en el texto de la factura (la MÁS fiable) ---\n// Si el nombre de un hotel de la lista aparece literalmente en el concepto o\n// las líneas de la factura, ese es el hotel. Es una coincidencia de texto\n// exacta (no fuzzy), así que es la señal más fuerte. Desambigua nombres\n// duplicados (dos \"Fogar Natural\") por la sociedad del destinatario.\nfunction matchPorNombre() {\n  const partes = [datos.concepto, datos.detalle_lineas, datos.detalle, datos.numero_pedido];\n  try {\n    if (Array.isArray(datos.centros_lista))\n      partes.push(datos.centros_lista.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' '));\n  } catch(e) {}\n  const texto = norm(partes.filter(Boolean).join(' '));\n  if (!texto) return null;\n  const GEN = new Set(['alda','hotel','hoteles','apartamentos','apartamento','apartahotel','hostal',\n    'albergue','pension','residencia','de','del','la','el','los','las','y','en','santiago','compostela']);\n  const cands = [];\n  for (const h of HOTELES) {\n    const toks = norm(h.nombre).split(' ').filter(w => w.length >= 4 && !GEN.has(w));\n    if (!toks.length) continue;\n    const todosPresentes = toks.every(t => texto.includes(t));\n    // Exigimos que TODOS los tokens distintivos del nombre estén, y que el nombre\n    // tenga sustancia (>=2 tokens, o 1 token largo >=6) para evitar falsos positivos.\n    const suficiente = todosPresentes && (toks.length >= 2 || (toks.length === 1 && toks[0].length >= 6));\n    if (suficiente) cands.push({ hotel: h, toks: toks.length });\n  }\n  if (!cands.length) return null;\n  const enSoc = cands.filter(x => _mismaSociedad(x.hotel));\n  if (_sociedadConocida) {\n    // Sociedad conocida: solo aceptamos un hotel de esa sociedad (desambigua duplicados)\n    if (!enSoc.length) return null;\n    enSoc.sort((a,b) => b.toks - a.toks);\n    return enSoc[0].hotel;\n  }\n  // Sociedad desconocida: mejor candidato por nº de tokens; si hay empate, no arriesgamos\n  cands.sort((a,b) => b.toks - a.toks);\n  if (cands.length > 1 && cands[0].toks === cands[1].toks) return null;\n  return cands[0].hotel;\n}\nconst nombreMatch = matchPorNombre();\n\n// --- Código que propuso la IA ---\nconst codigoIA = datos.codigo_hotel_ia && /^\\d+$/.test(String(datos.codigo_hotel_ia).trim())\n  ? String(datos.codigo_hotel_ia).trim().padStart(3, '0') : null;\nconst hotelIA = codigoIA ? HOTELES.find(h => String(h.codigo).padStart(3, '0') === codigoIA) : null;\n\n// La regla dura: el hotel debe pertenecer a la sociedad del destinatario.\nconst iaEnSociedadCorrecta = hotelIA && (!_sociedadConocida || _mismaSociedad(hotelIA));\n\nif (nombreMatch) {\n  // ── PRIORIDAD MÁXIMA: el NOMBRE del hotel aparece literal en la factura ──\n  match = nombreMatch;\n  metodo = 'nombre';\n  confianza = 'alta';\n  motivo = `Hotel identificado por NOMBRE en la factura → ${nombreMatch.codigo} ${nombreMatch.nombre}`;\n  if (hotelIA && String(hotelIA.codigo) === String(nombreMatch.codigo)) motivo += ' (IA coincide)';\n  else if (hotelIA) motivo += ` (IA sugería ${codigoIA}; prevalece el nombre explícito)`;\n} else if (hotelIA && !iaEnSociedadCorrecta) {\n  // ── LA IA SE EQUIVOCÓ DE SOCIEDAD ────────────────────────────────────\n  // Dos hoteles con el MISMO NOMBRE en sociedades distintas y la IA eligió el\n  // de la sociedad equivocada. Se corrige por dirección dentro de la sociedad\n  // correcta; si no hay, se deja sin match → Costes Generales.\n  if (senalDir && _mismaSociedad(senalDir.hotel) && senalDir.score >= UMBRAL_INSTALACION) {\n    match = senalDir.hotel; metodo = 'correccion_sociedad'; score = senalDir.score;\n    confianza = senalDir.score >= 55 ? 'media' : 'baja';\n    motivo = `IA sugirió ${codigoIA} ${hotelIA.nombre} (sociedad distinta); corregido por dirección → ${senalDir.hotel.codigo} ${senalDir.hotel.nombre} (${senalDir.why}, ${senalDir.score})`;\n  } else {\n    match = null;\n    motivo = `IA sugirió ${codigoIA} ${hotelIA.nombre} de otra sociedad y no hay hotel de la sociedad correcta que encaje → costes generales`;\n  }\n} else if (hotelIA) {\n  // ── LA IA MANDA (hotel en la sociedad correcta) ──────────────────────\n  match = hotelIA;\n  metodo = 'ia';\n  confianza = ['alta','media','baja'].includes(datos.confianza_hotel) ? datos.confianza_hotel : 'media';\n  const mismoCodigo = senalDir && String(senalDir.hotel.codigo).padStart(3,'0') === codigoIA;\n  if (mismoCodigo) {\n    confianza = 'alta';\n    motivo = `Hotel ${codigoIA} ${hotelIA.nombre} — IA + dirección coinciden (${senalDir.why}, ${senalDir.score})`;\n  } else if (senalDir && senalDir.score >= 55 && /nº/.test(senalDir.why) && _mismaSociedad(senalDir.hotel)) {\n    confianza = 'baja';\n    motivo = `Hotel ${codigoIA} ${hotelIA.nombre} [IA] — ATENCIÓN: la dirección apuntaba fuerte a ${senalDir.hotel.codigo} ${senalDir.hotel.nombre} (${senalDir.why}, ${senalDir.score}); verificar`;\n  } else {\n    motivo = `Hotel ${codigoIA} ${hotelIA.nombre} — identificado por IA (confianza ${confianza})`;\n    if (senalDir) motivo += ` | señal dir.: ${senalDir.hotel.codigo}/${senalDir.score}(${senalDir.why})`;\n  }\n} else if (senalDir && (\n    // ── RESERVA: sin nombre ni pista IA → dirección (instalación/concepto) ──\n    (senalDir.tipo === 'instalacion' && senalDir.score >= UMBRAL_INSTALACION) ||\n    (senalDir.tipo === 'concepto' && senalDir.score >= 45 && /via\\d/.test(senalDir.why) && (/nº/.test(senalDir.why) || /CP/.test(senalDir.why)))\n  )) {\n  match = senalDir.hotel;\n  metodo = senalDir.tipo;\n  score = senalDir.score;\n  confianza = senalDir.score >= 55 ? 'media' : 'baja';\n  motivo = `Sin nombre ni pista IA — dirección (${senalDir.tipo}) → ${senalDir.hotel.codigo} ${senalDir.hotel.nombre} (${senalDir.why}, ${senalDir.score})`;\n}\n\n// ---------- Salida ----------\nif (match) {\n  datos.codigo_hotel_ia = String(match.codigo);\n  datos.confianza_hotel = confianza;\n} else {\n  datos.codigo_hotel_ia = null;\n  datos.confianza_hotel = 'baja';\n  let _diag = '';\n  try {\n    const _rc = mejorPorDireccion(String(datos.concepto || ''));\n    const _rf = mejorPorDireccion(dirFiscalRaw || '');\n    _diag = ` | concepto=\"${String(datos.concepto||'').slice(0,60)}\" mejorConcepto=${_rc.best?_rc.best.codigo+'/'+_rc.bestScore+'('+_rc.bestWhy+')':'-'}` +\n            ` mejorFiscal=${_rf.best?_rf.best.codigo+'/'+_rf.bestScore:'-'} iaPista=${datos.codigo_hotel_ia_original||'null'}`;\n  } catch(e) {}\n  motivo = `Sin identificación de hotel (instal=\"${dirInstalRaw}\" fiscal=\"${dirFiscalRaw}\", hoteles=${HOTELES.length})${_diag}`;\n}\n\n\ndatos.match_metodo = metodo;\ndatos.match_score  = score;\ndatos.match_motivo = motivo;\ndatos.match_hotel  = match ? match.nombre : null;\ndatos.match_hoteles_evaluados = HOTELES.length;\n// Sociedad identificada por CIF (autoritativa) — para Costes Generales y validación aguas abajo\ndatos.sociedad_cif_id = _socCif ? _socCif.id : null;\ndatos.sociedad_cif_nombre = _socCif ? _socCif.name : null;\n// Diagnóstico: nº de hoteles de la sociedad identificada (contexto útil en el log)\nif (_socCif) {\n  datos.sociedad_cif_num_hoteles = HOTELES.filter(h => _mismaSociedad(h)).length;\n}\n\nreturn { json: datos, binary: $input.item.binary };\n"
+      },
+      "id": "e2c0b5da-f59d-4f1e-80d6-0106360f9460",
+      "name": "Match_Hotel_Determinista",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        18048,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "custom",
+        "customResource": "=pms.property",
+        "operation": "getAll",
+        "returnAll": true,
+        "options": {
+          "fieldsList": [
+            "id",
+            "name",
+            "active",
+            "contact_address_complete",
+            "email",
+            "pms_property_code",
+            "company_id"
+          ]
+        },
+        "filterRequest": {
+          "filter": [
+            {
+              "fieldName": "active",
+              "value": "true"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 1,
+      "position": [
+        14912,
+        848
+      ],
+      "id": "8eca26d8-f4fe-4889-b437-942e3df540c7",
+      "name": "Get_Hotels",
+      "credentials": {
+        "odooApi": {
+          "id": "smS9NmpDawbFL5pH",
+          "name": "Odoo PRO"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ ($json.to?.value?.[0]?.address || $json.to?.[0]?.address || $json.to || '').toLowerCase() }}",
+                    "rightValue": "facturasproveedores@aldahotels.com",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    },
+                    "id": "34181639-ff26-443e-ab70-bebcd60c43e6"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "proveedores"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        14688,
+        944
+      ],
+      "id": "c4df2a65-0ced-401a-b45a-671b91c265bd",
+      "name": "Switch_Bandeja"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Detectar TODOS los adjuntos PDF — 1 item por PDF\nconst items = $input.all();\nlet binary = {};\nlet triggerJson = {};\n\ntry {\n  const triggerItems = $('Email Trigger (IMAP)1').all();\n  if(triggerItems.length > 0) {\n    binary = triggerItems[0].binary || {};\n    triggerJson = triggerItems[0].json || {};\n  }\n} catch(e) {\n  if(items.length > 0) {\n    binary = items[0].binary || {};\n    triggerJson = items[0].json || {};\n  }\n}\n\nconst KEYWORDS_NO_FACTURA = ['albaran', 'albarán', 'delivery', 'presupuesto', 'quote', 'contrato', 'contract'];\nconst esNoFactura = nombre => KEYWORDS_NO_FACTURA.some(k => nombre.toLowerCase().includes(k));\n\nconst pdfs = [];\nfor(const [key, val] of Object.entries(binary)){\n  if(!val) continue;\n  const mime = val.mimeType || '';\n  const fname = val.fileName || val.filename || '';\n  if(mime === 'application/pdf' || fname.toLowerCase().endsWith('.pdf')){\n    if(!esNoFactura(fname)){\n      pdfs.push({ key, name: fname, binary: val });\n    }\n  }\n}\n\nif(pdfs.length === 0){\n  return [{\n    json: { ...triggerJson, detected_pdf_key: null, detected_pdf_name: '', total_pdfs: 0, pdf_index: 0 },\n    binary: binary,\n    pairedItem: { item: 0 }\n  }];\n}\n\nreturn pdfs.map((pdf, index) => ({\n  json: {\n    ...triggerJson,\n    detected_pdf_key: pdf.key,\n    detected_pdf_name: pdf.name,\n    total_pdfs: pdfs.length,\n    pdf_index: index + 1,\n    all_pdfs: pdfs.map(p => p.name).join(', ')\n  },\n  binary: { attachment_0: pdf.binary },\n  pairedItem: { item: 0 }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16480,
+        848
+      ],
+      "id": "6fbf6186-423a-405f-a6ac-8cafbe5e651e",
+      "name": "Detect_PDF_Adjunto"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Construye el cuerpo para POST /api/webhook/factura del portal.\nconst d = $('Build_HTML_Centros').item.json;\n\n// PDF en base64 — getBinaryDataBuffer() es el helper soportado en Code Node (binaryToBuffer\n// dio 'not supported in the Code Node' en pruebas reales). $itemIndex en modo\n// runOnceForEachItem corresponde al item actual sea cual sea la rama de origen.\nlet pdf_base64 = '';\nlet _pdf_debug = 'not-attempted';\ntry {\n  const buf = await this.helpers.getBinaryDataBuffer($itemIndex, 'pdf_final');\n  pdf_base64 = buf.toString('base64');\n  _pdf_debug = 'ok, bytes=' + buf.length;\n} catch(e) { _pdf_debug = 'ERROR: ' + (e?.message || String(e)); }\n\n\nconst token = (d.factura_numero ? String(d.factura_numero).replace(/[^A-Za-z0-9]/g,'') : 'fac') + '_' + Date.now();\n\nreturn { json: {\n  token,\n  estado:              d.tiene_error_grave ? 'pendiente' : 'aprobada',\n  n8n_webhook_url:    'https://n8n.gestionalda.es/webhook/factura-validada',\n  factura_numero:     d.factura_numero || null,\n  factura_fecha:      d.factura_fecha || null,\n  proveedor_nombre:   d.proveedor_nombre || null,\n  proveedor_cif:      d.proveedor_cif || d.destinatario_cif || null,\n  importe_total:      d.importe_total ?? null,\n  base_imponible:     d.base_imponible ?? null,\n  forma_pago_detalle: d.forma_pago_detalle || null,\n  concepto:           d.concepto || null,\n  hotel_nombre_odoo:  d.hotel_nombre_odoo || d.match_hotel || null,\n  codigo_hotel:       d.codigo_hotel || null,\n  dw_hotel:           d.dw_hotel || null,\n  dw_fpago:           d.dw_fpago || '00',\n  sociedad:           d.sociedad || null,\n  es_costes_generales: d.es_costes_generales ? 1 : 0,\n  email_remitente:    d.email_remitente || '',\n  asunto_email:       d.asunto_email || '',\n  detected_pdf_name:  d.detected_pdf_name || ((d.factura_numero||'factura')+'.pdf'),\n  errores_graves:     d.errores_graves || [],\n  errores_leves:      d.errores_leves || [],\n  motivo_revision:    d.motivo_revision || null,\n  solo_enlace:        d.solo_enlace ? 1 : 0,\n  enlace_descarga:    d.enlace_descarga || null,\n  enlaces_detectados: d.enlaces_detectados || [],\n  requiere_acceso_portal: d.requiere_acceso_portal ? 1 : 0,\n  pdf_base64,\n  _pdf_debug,\n} };\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        19840,
+        1136
+      ],
+      "id": "3fdabcc7-1f79-454a-ad20-07ff4946a2fc",
+      "name": "Prep_Portal_Payload"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://facturas-web-omega.vercel.app/api/webhook/factura",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Portal-Token",
+              "value": "Ald4.2026.P0rtal"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        20064,
+        1136
+      ],
+      "id": "361f2348-8184-40c2-b12a-11c0676e6f7f",
+      "name": "HTTP_Portal_Enviar"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "factura-validada",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        14464,
+        1424
+      ],
+      "id": "ca5f2ade-77c6-45ce-a8f5-1465f69381c4",
+      "name": "Webhook_Validacion",
+      "webhookId": "dcb7297b-e7f8-42e5-a6ee-ee6b8895c7db"
+    },
+    {
+      "parameters": {
+        "jsCode": "// El portal manda: { accion, token, hotel, fpago, pdf_base64, ... }\nconst b = $json.body || $json;\nif (b.accion !== 'aprobar') {\n  return [{ json: { archivar: false, accion: b.accion || 'desconocida', token: b.token || null, nota: b.nota || '' } }];\n}\nif (!b.pdf_base64) {\n  return [{ json: { archivar: false, error: 'sin pdf_base64', token: b.token || null } }];\n}\nconst buf = Buffer.from(b.pdf_base64, 'base64');\nconst fileName = String(b.token || 'factura').replace(/[^A-Za-z0-9._-]/g,'_') + '.pdf';\nreturn [{\n  json: { archivar: true, token: b.token, dw_hotel: b.hotel, dw_fpago: b.fpago || '00',\n          dw_nota: 'Validado portal ' + (b.token||''), dw_nota2: '' },\n  binary: { pdf_final: await this.helpers.prepareBinaryData(buf, fileName, 'application/pdf') }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        14688,
+        1424
+      ],
+      "id": "c33e9fa8-518c-4d2a-9350-587311ecf2b1",
+      "name": "Handler_Validacion"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.archivar }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        14912,
+        1424
+      ],
+      "id": "8a364386-0e61-40d8-9843-69eac585f1c9",
+      "name": "IF_Archivar"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://facturas.gestionalda.es/api/ftp",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Token",
+              "value": "Ald4.2026.D0cuwar3"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "pdf_final"
+            },
+            {
+              "name": "hotel",
+              "value": "={{ $json.dw_hotel }}"
+            },
+            {
+              "name": "fpago",
+              "value": "={{ $json.dw_fpago }}"
+            },
+            {
+              "name": "nota",
+              "value": "={{ $json.dw_nota }}"
+            },
+            {
+              "name": "nota2",
+              "value": "={{ $json.dw_nota2 }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        15136,
+        1360
+      ],
+      "id": "67ac4054-4b32-4e25-a9dc-502f83aea8f1",
+      "name": "DocuWare_Validado"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ (() => {\n  const hv = $('Handler_Validacion').item.json;\n  if (hv.archivar === true) {\n    const sc = $json.statusCode;\n    const ok = sc != null && sc >= 200 && sc < 300;\n    return { ok: true, archivado: ok, token: hv.token, error: ok ? undefined : ('DocuWare respondio ' + sc) };\n  }\n  return { ok: true, archivado: false, token: hv.token, error: hv.error || undefined };\n})() }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        15360,
+        1424
+      ],
+      "id": "93f0b2c6-d7ae-45a6-bd52-1c7792882d2e",
+      "name": "Responder_Portal"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "c132e43f-f6c2-447d-bd1b-ecd31fcad06d",
+              "leftValue": "={{ $json.total_pdfs }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        16704,
+        848
+      ],
+      "id": "f79288a1-6f00-45ed-8964-767cbc55bd62",
+      "name": "IF_Tiene_PDF"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nlet t = {};\ntry { t = $('Email Trigger (IMAP)1').first().json || {}; } catch(e) {}\n\nconst html = t.textHtml || t.html || t.bodyHtml || '';\nconst text = t.textPlain || t.text || t.bodyText || '';\nconst asunto = t.subject || '';\nconst remitente = t.from?.value?.[0]?.address || t.from?.address || String(t.from || '');\n\nconst urls = [];\nconst reHref = /href\\s*=\\s*[\"']([^\"']+)[\"']/gi;\nlet m;\nwhile((m = reHref.exec(html)) !== null){ urls.push(m[1]); }\nconst reUrl = /https?:\\/\\/[^\\s\"'<>\\)\\]]+/gi;\nfor(const src of [text, html]){ let u; while((u = reUrl.exec(src)) !== null){ urls.push(u[0]); } }\n\nconst limpio = u => String(u).replace(/&amp;/g,'&').trim().replace(/[.,;]+$/,'');\nconst vistos = new Set();\nconst todas = [];\nfor(const u of urls.map(limpio)){\n  if(!u || !/^https?:\\/\\//i.test(u)) continue;\n  const k = u.toLowerCase();\n  if(vistos.has(k)) continue;\n  vistos.add(k); todas.push(u);\n}\n\nconst RUIDO = ['unsubscribe','/baja','darse-de-baja','mailto:','facebook.com','twitter.com','x.com/','linkedin.com','instagram.com','youtube.com','whatsapp.com','privacid','privacy','aviso-legal','/legal','cookie','t.me/','goo.gl/maps','maps.google'];\nconst esRuido = u => RUIDO.some(r => u.toLowerCase().includes(r));\nconst KW = ['descarg','download','factura','invoice','document','/pdf','.pdf','visualiz','ver-factura','verfactura','recibo','justificante','comprobante','/dl/','/file'];\nconst score = u => { const s=u.toLowerCase(); return KW.reduce((acc,k)=> acc + (s.includes(k)?1:0), 0); };\n\nconst candidatas = todas.filter(u => !esRuido(u));\ncandidatas.sort((a,b) => score(b) - score(a));\nconst enlaceDescarga = (candidatas.find(u => score(u) > 0)) || candidatas[0] || null;\n\n// Detectar si el correo pide acceder a una PLATAFORMA/PORTAL del proveedor en\n// vez de dar un enlace de descarga directo (caso distinto: no hay nada que\n// clicar, hay que iniciar sesión en el sitio del proveedor con credenciales).\nconst cuerpoLower = (text + ' ' + html.replace(/<[^>]+>/g, ' ')).toLowerCase();\nconst KW_PORTAL = ['nuestro portal', 'área de cliente', 'area de cliente', 'accede a tu cuenta',\n  'inicia sesión', 'inicia sesion', 'plataforma de facturación', 'plataforma de facturacion',\n  'portal del proveedor', 'portal de facturación', 'portal de facturacion', 'zona de clientes',\n  'inicia sesion en', 'accede a nuestra plataforma', 'consulta tu factura en', 'consultar en la web'];\nconst requierePortal = KW_PORTAL.some(k => cuerpoLower.includes(k));\n\nlet proveedorAprox = null;\ntry { const dom = (remitente.split('@')[1] || '').split('.')[0]; if(dom) proveedorAprox = dom.charAt(0).toUpperCase() + dom.slice(1); } catch(e){}\n\nconst baseJson = items[0]?.json || {};\nreturn [{\n  json: {\n    ...baseJson,\n    es_factura: true,\n    solo_enlace: true,\n    enlace_descarga: enlaceDescarga,\n    enlaces_detectados: candidatas.slice(0, 10),\n    requiere_acceso_portal: requierePortal,\n    proveedor_nombre: baseJson.proveedor_nombre || proveedorAprox,\n    asunto_email: asunto,\n    email_remitente: remitente,\n    detected_pdf_name: baseJson.detected_pdf_name || (asunto ? asunto.slice(0,60) : 'factura_sin_adjunto'),\n    factura_numero: null\n  },\n  binary: {}\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        18272,
+        992
+      ],
+      "id": "d4bfb46b-b198-43e0-804b-4835f52e018b",
+      "name": "Build_Link_Only_Item"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "ec9da2db-bcf2-4dab-badc-cf3279a313d4",
+              "leftValue": "={{ $json._tiene_adjunto_original }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        19168,
+        944
+      ],
+      "id": "b7037015-917e-479b-9b53-64b4eae0ebf4",
+      "name": "IF_Solo_Enlace_Skip_Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Facturas sin adjunto original (solo enlace de descarga): no hay nada que\n// fusionar. binary.pdf_final ya viene puesto por Restore_Binary_Centros\n// (es el resumen con los datos extraidos del cuerpo del email).\nreturn { json: $input.item.json, binary: $input.item.binary };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        19392,
+        1040
+      ],
+      "id": "e68d3693-ffe1-4ea1-b101-4c8fc5def297",
+      "name": "Passthrough_Enlace"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "a51aa17a-f730-4791-8d8b-faf07256975b",
+              "leftValue": "={{ ($json.acuse_to || '').toString().toLowerCase().trim() }}",
+              "rightValue": "@aldahotels.com",
+              "operator": {
+                "type": "string",
+                "operation": "endsWith"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        20960,
+        944
+      ],
+      "id": "79ad507a-b246-4b9a-b784-5c5aaf953eb8",
+      "name": "IF_Remitente_Interno"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Empaqueta las compañías (res.company) en un único item para que el\n// siguiente nodo Odoo (Get_Cities → res.city) se ejecute una sola vez.\n// Las compañías se seguirán leyendo aguas abajo via $('Get_Companies').all().\nreturn [{ json: { companies_count: $input.all().length } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        15808,
+        848
+      ],
+      "id": "a7d5dec7-ce3e-474e-b5ad-55116bd3897d",
+      "name": "Consolida_Ref"
+    },
+    {
+      "parameters": {
+        "resource": "custom",
+        "customResource": "=res.city.zip",
+        "operation": "getAll",
+        "returnAll": true,
+        "options": {
+          "fieldsList": [
+            "id",
+            "name",
+            "city_id"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 1,
+      "position": [
+        16032,
+        848
+      ],
+      "id": "a07fe66b-67fa-484a-8e9c-1b384e2786a9",
+      "name": "Get_CityZip",
+      "credentials": {
+        "odooApi": {
+          "id": "smS9NmpDawbFL5pH",
+          "name": "Odoo PRO"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "b6a1f0a1-2222-4a1a-9e11-111111111111",
+              "leftValue": "={{ $json.accion }}",
+              "rightValue": "rechazar",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        15136,
+        1520
+      ],
+      "id": "b6a1f0a1-1111-4a1a-9e11-000000000001",
+      "name": "IF_Es_Rechazo"
+    },
+    {
+      "parameters": {
+        "fromEmail": "facturasproveedores@aldahotels.com",
+        "toEmail": "diegovieiros@aldahotels.com",
+        "subject": "={{ '❌ [Facturas] Rechazada — ' + ($json.token || 'sin token') }}",
+        "html": "=<!DOCTYPE html><html><body style=\"font-family:Arial,sans-serif;font-size:13px;color:#111;padding:24px;max-width:620px;margin:0 auto\">\n<div style=\"background:#991B1B;color:#fff;padding:14px 18px;border-radius:6px;margin-bottom:20px\">\n  <strong>❌ Factura rechazada desde el portal</strong>\n</div>\n<table style=\"width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px\">\n  <tr style=\"background:#f5f5f5\"><td style=\"padding:7px 10px;font-weight:bold;width:35%\">Token</td><td style=\"padding:7px 10px\">{{ $json.token }}</td></tr>\n  <tr><td style=\"padding:7px 10px;font-weight:bold\">Nota del revisor</td><td style=\"padding:7px 10px\">{{ $json.nota || '—' }}</td></tr>\n</table>\n<p style=\"font-size:11px;color:#999;text-align:center\">Sistema de facturacion Alda Hotels</p>\n</body></html>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        15360,
+        1520
+      ],
+      "id": "b6a1f0a1-1111-4a1a-9e11-000000000002",
+      "name": "Email_Notifica_Rechazo",
+      "credentials": {
+        "smtp": {
+          "id": "VVDZSdfh2KKf7hsQ",
+          "name": "SMTP account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "Email Trigger (IMAP)1": [
+      {
+        "json": {
+          "textHtml": "<div dir=\"ltr\"><div><br clear=\"all\"></div><div><div dir=\"ltr\" class=\"gmail_signature\" data-smartmail=\"gmail_signature\"><div dir=\"ltr\"><table style=\"font-family:sans-serif\"><tbody><tr><td style=\"width:138.453px\"><img src=\"https://firma.aldahotels.es/img/diego-vieiros.png\" alt=\"Foto personal\" width=\"125\" style=\"padding:0px\"></td><td style=\"width:274.844px;text-align:center\"><p style=\"margin:10px 0px\"><span style=\"font-size:20px;color:rgb(36,36,36)\"><strong>Diego Vieiros PÃ©rez</strong></span></p><table style=\"width:219.875px;height:6px;background-color:rgb(36,36,36);margin-left:auto;margin-right:auto\"><tbody><tr><td></td></tr></tbody></table><p style=\"margin:10px 0px 0px\"><span style=\"font-size:15px;color:rgb(36,36,36)\">TÃ©cnico de Automatizaciones</span></p></td><td style=\"width:3.51562px;background-color:rgb(36,36,36)\"></td><td style=\"width:690.188px;margin-left:10px\"><p style=\"margin:0px 0px 0px 10px;display:flex;width:690.188px\"><img src=\"https://firma.aldahotels.es/img/telefono_n.png\" alt=\"\" width=\"20\" style=\"padding:6px 1px\"><a href=\"tel:+34627929053\" style=\"text-decoration:none;color:rgb(36,36,36);margin:0px 0px 0px 10px\" target=\"_blank\">+34 627929053</a></p><p style=\"margin:0px 0px 0px 10px;display:flex;width:690.188px\"><img src=\"https://firma.aldahotels.es/img/email_n.png\" alt=\"\" width=\"20\" style=\"padding:6px 1px\"><a href=\"mailto:diegovieiros@aldahotels.com\" style=\"text-decoration:none;color:rgb(36,36,36);margin:0px 0px 0px 10px\" target=\"_blank\">diegovieiros@aldahotels.com</a></p><p style=\"margin:0px 0px 0px 10px;display:flex;width:690.188px\"><img src=\"https://firma.aldahotels.es/img/web_n.png\" alt=\"\" width=\"20\" style=\"padding:6px 1px\"><a href=\"https://www.aldahotels.es\" style=\"text-decoration:none;color:rgb(36,36,36);margin:0px 0px 0px 10px\" target=\"_blank\">www.aldahotels.es</a></p></td></tr></tbody></table><br style=\"color:rgb(36,36,36);font-family:sans-serif;font-size:15px\"><table style=\"font-family:sans-serif;width:787.5px;background-color:rgb(36,36,36)\"><tbody><tr><td><img src=\"https://firma.aldahotels.es/img/logowhite.png\" alt=\"Foto personal\" width=\"175\" style=\"padding:5px 10px\"></td><td style=\"text-align:right;padding:5px 10px\"><a href=\"https://www.facebook.com/AldaHotels/\" style=\"text-decoration:none;color:rgb(36,36,36)\" target=\"_blank\"><img src=\"https://firma.aldahotels.es/img/fb_white.png\" alt=\"facebook\" width=\"20\" href=\"https://www.facebook.com/AldaHotels/\" style=\"padding:5px 3px\"></a>Â <a href=\"https://www.youtube.com/channel/UCJ20x2dNJt5JIOgONS59aDw\" style=\"text-decoration:none;color:rgb(36,36,36)\" target=\"_blank\"><img src=\"https://firma.aldahotels.es/img/yt_white.png\" alt=\"youtube\" width=\"20\" style=\"padding:5px 3px\"></a>Â <a href=\"https://www.instagram.com/aldahotels/?hl=en/\" style=\"text-decoration:none;color:rgb(36,36,36)\" target=\"_blank\"><img src=\"https://firma.aldahotels.es/img/ig_white.png\" alt=\"instagram\" width=\"20\" style=\"padding:5px 3px\"></a>Â <a href=\"https://es.linkedin.com/company/aldahotels\" style=\"text-decoration:none;color:rgb(36,36,36)\" target=\"_blank\"><img src=\"https://firma.aldahotels.es/img/in_white.png\" alt=\"linked-in\" width=\"20\" style=\"padding:5px 3px\"></a>Â <a href=\"https://twitter.com/AldaHotels\" style=\"text-decoration:none;color:rgb(36,36,36)\" target=\"_blank\"><img src=\"https://firma.aldahotels.es/img/x_white.png\" alt=\"x\" width=\"20\" style=\"padding:5px 3px\"></a></td></tr></tbody></table><div style=\"font-size:10px;color:rgb(179,179,179);font-weight:700;text-align:justify;padding-top:15px;font-family:sans-serif;width:787.5px\"><p>En cumplimiento de la Ley 34/2002 de Servicios de la Sociedad de la InformaciÃ³n y del Comercio ElectrÃ³nico (LSSI-CE), asÃ­ como lo dispuesto en el Reglamento General de ProtecciÃ³n de Datos y demÃ¡s legislaciÃ³n concordante, le informamos de que sus datos personales figuran en un sistema de tratamiento automatizado cuya responsabilidad es de Grupo Alda compuesto por las siguientes sociedades: Alda RÃ­as Baixas SL CIF B70476494; Alda Compostela SL CIF B70108931; Alda Castilla SL CIF B70408224; Hoteles RÃ­as Altas SL CIF B70503206; Consultores Hoteleros Integrales SL CIF B70537121, con direcciÃ³n postal a efecto de notificaciÃ³n en Praza da Algalia de Arriba, 3 â 15704 Santiago de Compostela. Los datos personales que existen en nuestro poder estÃ¡n protegidos por nuestra PolÃ­tica de Privacidad y serÃ¡n tratados con la finalidad de atender su solicitud de informaciÃ³n o contacto, asÃ­ como mantenerle informado de nuestros productos y servicios, actuales o futuros. Los datos no se cederÃ¡n a terceros salvo en los casos en que exista una obligaciÃ³n legal. Para ejercer sus derechos de acceso, rectificaciÃ³n, cancelaciÃ³n, oposiciÃ³n, limitaciÃ³n, supresiÃ³n y/o portabilidad debe enviar un correo electrÃ³nico a <a href=\"mailto:protecciondatos@aldahotels.com\" target=\"_blank\">protecciondatos@aldahotels.com</a>. Este correo podrÃ­a ser confidencial. Si recibe este e-mail por error, por favor elimÃ­nelo, asÃ­ como cualquier documento adjunto, y notifÃ­quelo a su emisor. Si usted no es el destinatario del mensaje, sepa que no estÃ¡ permitida ninguna difusiÃ³n, copia o utilizaciÃ³n no autorizada.</p></div></div></div></div></div>\r\n",
+          "textPlain": "[image: Foto personal]\r\n\r\n*Diego Vieiros PÃ©rez*\r\n\r\nTÃ©cnico de Automatizaciones\r\n\r\n+34 627929053 <+34627929053>\r\n\r\ndiegovieiros@aldahotels.com\r\n\r\nwww.aldahotels.es\r\n\r\n[image: Foto personal] [image: facebook]\r\n<https://www.facebook.com/AldaHotels/> [image: youtube]\r\n<https://www.youtube.com/channel/UCJ20x2dNJt5JIOgONS59aDw> [image:\r\ninstagram] <https://www.instagram.com/aldahotels/?hl=en/> [image: linked-in]\r\n<https://es.linkedin.com/company/aldahotels> [image: x]\r\n<https://twitter.com/AldaHotels>\r\n\r\nEn cumplimiento de la Ley 34/2002 de Servicios de la Sociedad de la\r\nInformaciÃ³n y del Comercio ElectrÃ³nico (LSSI-CE), asÃ­ como lo dispuesto en\r\nel Reglamento General de ProtecciÃ³n de Datos y demÃ¡s legislaciÃ³n\r\nconcordante, le informamos de que sus datos personales figuran en un\r\nsistema de tratamiento automatizado cuya responsabilidad es de Grupo Alda\r\ncompuesto por las siguientes sociedades: Alda RÃ­as Baixas SL CIF B70476494;\r\nAlda Compostela SL CIF B70108931; Alda Castilla SL CIF B70408224; Hoteles\r\nRÃ­as Altas SL CIF B70503206; Consultores Hoteleros Integrales SL CIF\r\nB70537121, con direcciÃ³n postal a efecto de notificaciÃ³n en Praza da\r\nAlgalia de Arriba, 3 â 15704 Santiago de Compostela. Los datos personales\r\nque existen en nuestro poder estÃ¡n protegidos por nuestra PolÃ­tica de\r\nPrivacidad y serÃ¡n tratados con la finalidad de atender su solicitud de\r\ninformaciÃ³n o contacto, asÃ­ como mantenerle informado de nuestros productos\r\ny servicios, actuales o futuros. Los datos no se cederÃ¡n a terceros salvo\r\nen los casos en que exista una obligaciÃ³n legal. Para ejercer sus derechos\r\nde acceso, rectificaciÃ³n, cancelaciÃ³n, oposiciÃ³n, limitaciÃ³n, supresiÃ³n y/o\r\nportabilidad debe enviar un correo electrÃ³nico a\r\nprotecciondatos@aldahotels.com. Este correo podrÃ­a ser confidencial. Si\r\nrecibe este e-mail por error, por favor elimÃ­nelo, asÃ­ como cualquier\r\ndocumento adjunto, y notifÃ­quelo a su emisor. Si usted no es el\r\ndestinatario del mensaje, sepa que no estÃ¡ permitida ninguna difusiÃ³n,\r\ncopia o utilizaciÃ³n no autorizada.\r\n",
+          "metadata": {
+            "return-path": "<diegovieiros@aldahotels.com>",
+            "delivered-to": "facturasproveedores@aldahotels.com",
+            "received": "from gestionalda.es\tby gestionalda.es with LMTP\tid 4GQZJHnoVWrqVgAAmvU7pA\t(envelope-from <diegovieiros@aldahotels.com>)\tfor <facturasproveedores@aldahotels.com>; Tue, 14 Jul 2026 09:42:49 +0200",
+            "dkim-filter": "OpenDKIM Filter v2.11.0 gestionalda.es 83172C074C",
+            "authentication-results": "gestionalda.es;\tdkim=pass (2048-bit key; unprotected) header.d=aldahotels.com header.i=@aldahotels.com header.b=\"tflT7zyW\";\tdkim-atps=neutral",
+            "x-virus-scanned": "Debian amavisd-new at gestionalda.es",
+            "arc-seal": "i=1; a=rsa-sha256; t=1784014967; cv=none;        d=google.com; s=arc-20260327;        b=J2TI7ZRrGX38aY0bnHnfVl9OBPn4r17qciH815qZlIDIWWL2dEjGeh67mzquORpglj         snDbkCX+uMLYYPQNG1yyZDR1pLkGG+jTCBdIzo0uFhN1NHOHe+0NyQ8Ag1T6OdG+RBL2         609JO4LCny92Ram9j3Y0FKKy0Ubuyhn710Di4cDuq87q4h/43FYL4GRsIFDPjCNIcIzK         IqWdQnAeKAunBqoWlBMytAeyWYaL/mMp6bT0VR2n/sQ6qw7os9tdZWN/VRmZJcXdn9hb         vxa/LJi7ltgpjCyZ0YmAqMYjA+F5xIG0H8RwqK+VVIcRP07RAqAqsdgAkIIeLhiYSrP9         zdZw==",
+            "arc-message-signature": "i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20260327;        h=to:subject:message-id:date:from:mime-version:dkim-signature;        bh=heBabCWe9rCddDP6lDZppwU23WkMwNWGIGNbZvNCqsA=;        fh=AvSP8FX0RHpc7jkxXVoGUJqqrdrVu45tuJJuvcgBvGM=;        b=iXVT27XrGLekS8eOOybyDYWeVgLl3XTS2rY8f9amLHDfedWxHt0cLK3P1mVuOxIQVK         BYnXB4o3v3UrkVO9/c3nTT3U4JlMWGaiGb7qTY3LgO4n6E4g5MjVVU6K4wsBec4WXjN8         fi72kgUqgkYuDXFPOApyz2aXnbXMBPejrkjWrTb9djZg/kSnMTAjXB8AqRh9gGiTGPpK         DaFfiHCmuI0DLFZFPbdfQuovvDd7Owj25LfMIp100H7kLbHoklWMSiWd5Ig1/YQReu58         AYpfotHXU50zeCUFrQ2GL2HIrYdCXxQWjWLHFbITrt4T6egTbnwgMHxFAuD2IEw5Nsgi         3dvQ==;        darn=aldahotels.com",
+            "arc-authentication-results": "i=1; mx.google.com; arc=none",
+            "dkim-signature": "v=1; a=rsa-sha256; c=relaxed/relaxed;        d=aldahotels.com; s=gmail; t=1784014967; x=1784619767; darn=aldahotels.com;        h=content-type:to:subject:message-id:date:from:mime-version:from:to         :cc:subject:date:message-id:reply-to:content-type;        bh=heBabCWe9rCddDP6lDZppwU23WkMwNWGIGNbZvNCqsA=;        b=tflT7zyWm/5NtS/FlKg/ktRM+NCUUz/DINkLAX9ijzDWeOlvlZnnMf7TfZiAXZBq6t         afD/fcNktH5uObnq0AD8pUxIXdZQTzQ+USOFYuT4WwzRSC1e+469TGI9tu8mOdg0yl92         K5IrW952fj2WKQeLLqIMVSmPwFk17zauTPI+aXkOh1F5bLr7GKfzjUHmJtqpqnC1jGok         Asmi6f2afzoCnpgI16kYGSjl1ES7KC9j1WJGgjmodph7LEqRDrwI92xJOTgSHEpwJ4bn         XmaaZhStWKgQ9P8duWXO8UcfzUJ5dmQCtP9F/xGxGpoYRfFxnw53+0Jk1Vz6J3BU1g1Q         hp5w==",
+            "x-google-dkim-signature": "v=1; a=rsa-sha256; c=relaxed/relaxed;        d=1e100.net; s=20251104; t=1784014967; x=1784619767;        h=content-type:to:subject:message-id:date:from:mime-version:x-gm-gg         :x-gm-message-state:from:to:cc:subject:date:message-id:reply-to         :content-type;        bh=heBabCWe9rCddDP6lDZppwU23WkMwNWGIGNbZvNCqsA=;        b=bQMRThHc2l/mA3xj6KIDWwVxBKHHKx2mFNhTYFEu26wgg3eLLksiNoRPk3hgEnlF6E         C5QFH+X2GWL+4BLO1FwJxx5ampWkZ/hfC7iryGXPozINKhKwOvWCkqBNGDV/a8X1tmMk         Y5P05eus7FjHICtSFsocKOP700uLe74U3urJz3EKzegw7yobil2c7kDCxskbFBELpw9x         pX9TtEpNRV/ahox9neDzoI/op+vDqwLOlCwRAf6V/fGZEGVRajWK3DN311qq4ebCc5F/         uWKQvwCcpXgLdkzcGD9BcNG5pMDQ/7zEXs3Iy6HJZwiOKLlkWoOan/2EPjMccz30GsxQ         ytcg==",
+            "x-gm-message-state": "AOJu0YzLWFU9XFKdpdonO6shMCmymDaGtJms4k2LqAfyvTG1lORfeWmR\tJg3UXQ9nMbWFOCavnSJ4Gny48zo+sJHm8oA390bx7bwh/fqKKi8DnU/Rx1wK1jJPozQw8vtq0JG\t8lek6Dhm/u5gsQ4tKCMUiu4UuqiWq8LokW9JHFnKQYPcGQXBB8NZ3eRI=",
+            "x-gm-gg": "AfdE7cnTPjk4lle59yXE1e6bPm8cotWXI65uIefkFVLJnpJP1/H9yFALG7O3k+1V/Dv\tGolsMjMzzmftJtphMf+k4h7Q+XxSSC+m/lK4NgtQDTI72rko7suTPxA1vz0EJnNixZZ8Ldhp137\tMElIuxT2qgdT7qz6ISowHJWk3yUclP4MtIZmMlKICfyFasvjOEZS2jwbPtwOrb2OcnLBeEN36Gj\tlV9yD9Pq4Yph8DEVv9cR7oUV22TsGc2MkHaM9nQdW/b2QLM59ScTf3GBcekfSBzphvgHeyvcg==",
+            "x-received": "by 2002:a05:6512:3182:b0:5b0:227d:cef9 with SMTP id 2adb3069b0e04-5b0227dd3ddmr3225980e87.3.1784014966457; Tue, 14 Jul 2026 00:42:46 -0700 (PDT)",
+            "mime-version": "1.0",
+            "x-gm-features": "AUfX_mwO4YqMkj0XR1Zyu_CyXR7hvbixp54g2ouoRINviS28Gb316IJWvqzmfjU",
+            "message-id": "<CAC4xfCgEu8egdCGhwRvYryTpmayJL+9i7_WPpUL4a1Z-dSi_tg@mail.gmail.com>",
+            "content-type": "multipart/mixed; boundary=\"00000000000059b21206568d5aa5\""
+          },
+          "attributes": {
+            "uid": 386
+          },
+          "from": "Diego Vieiros <diegovieiros@aldahotels.com>",
+          "date": "Tue, 14 Jul 2026 09:42:36 +0200",
+          "subject": "ez5",
+          "to": "facturasproveedores@aldahotels.com"
+        },
+        "binary": {
+          "attachment_0": {
+            "mimeType": "application/pdf",
+            "fileType": "pdf",
+            "fileExtension": "pdf",
+            "data": "filesystem-v2",
+            "fileName": "E2620296.pdf",
+            "id": "filesystem-v2:workflows/YYM5EEUKqAiARnC7/executions/temp/binary_data/857ed38a-7edc-4867-b4be-a319a62d0abe",
+            "fileSize": "115 kB",
+            "bytes": 115131
+          }
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Email Trigger (IMAP)1": {
+      "main": [
+        [
+          {
+            "node": "Switch_Bandeja",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PDF_To_Base64": {
+      "main": [
+        [
+          {
+            "node": "Build_Gemini_Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build_Gemini_Payload": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter_Vision_Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract_Vision_Response": {
+      "main": [
+        [
+          {
+            "node": "Parser_JSON_Centros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter_Vision_Call": {
+      "main": [
+        [
+          {
+            "node": "Extract_Vision_Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email_Acuse_Recibo": {
+      "main": [
+        [
+          {
+            "node": "IF_Error_Leve",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep_Acuse_Recibo": {
+      "main": [
+        [
+          {
+            "node": "IF_Remitente_Interno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep_Aviso_Leve": {
+      "main": [
+        [
+          {
+            "node": "Email_Aviso_Leve",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF_Error_Leve": {
+      "main": [
+        [
+          {
+            "node": "Prep_Aviso_Leve",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep_Mover_Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore_Binary_Centros": {
+      "main": [
+        [
+          {
+            "node": "IF_Solo_Enlace_Skip_Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Drive_Subir_PDF": {
+      "main": [
+        [
+          {
+            "node": "Prep_Aprobacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mover_Email_Aprobacion": {
+      "main": [
+        [
+          {
+            "node": "Mover_IMAP_Aprobacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets_Aprobacion": {
+      "main": [
+        [
+          {
+            "node": "Mover_Email_Aprobacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep_Sheet_Aprobacion": {
+      "main": [
+        [
+          {
+            "node": "Sheets_Aprobacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email_Aprobacion": {
+      "main": [
+        [
+          {
+            "node": "Prep_Sheet_Aprobacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep_Aprobacion": {
+      "main": [
+        [
+          {
+            "node": "Email_Aprobacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF_Necesita_Aprobacion": {
+      "main": [
+        [
+          {
+            "node": "Drive_Subir_PDF",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prep_Portal_Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep_DocuWare_Centros",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prep_Portal_Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code_Hoteles_JSON": {
+      "main": [
+        [
+          {
+            "node": "Get_Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean_Address": {
+      "main": [
+        [
+          {
+            "node": "Code_Hoteles_JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build_HTML_Centros": {
+      "main": [
+        [
+          {
+            "node": "Generate_Summary_PDF_Centros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets_Sin_Datos": {
+      "main": [
+        [
+          {
+            "node": "Mover_Sin_Datos_IMAP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log_Sin_Datos": {
+      "main": [
+        [
+          {
+            "node": "Sheets_Sin_Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF_Datos_Extraidos": {
+      "main": [
+        [
+          {
+            "node": "Build_HTML_Centros",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log_Sin_Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email_Aviso_Leve": {
+      "main": [
+        [
+          {
+            "node": "Prep_Mover_Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep_Mover_Email": {
+      "main": [
+        [
+          {
+            "node": "Mover_Email_IMAP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets_Centros": {
+      "main": [
+        [
+          {
+            "node": "Prep_Acuse_Recibo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep_Sheet_Centros": {
+      "main": [
+        [
+          {
+            "node": "Sheets_Centros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep_DocuWare_Centros": {
+      "main": [
+        [
+          {
+            "node": "DocuWare_Centros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DocuWare_Centros": {
+      "main": [
+        [
+          {
+            "node": "Prep_Sheet_Centros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge_PDFs_Centros": {
+      "main": [
+        [
+          {
+            "node": "IF_Necesita_Aprobacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate_Summary_PDF_Centros": {
+      "main": [
+        [
+          {
+            "node": "Restore_Binary_Centros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parser_JSON_Centros": {
+      "main": [
+        [
+          {
+            "node": "Match_Hotel_Determinista",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get_Hotels": {
+      "main": [
+        [
+          {
+            "node": "Clean_Address",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch_Bandeja": {
+      "main": [
+        [
+          {
+            "node": "Log_Inicio",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get_Hotels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect_PDF_Adjunto": {
+      "main": [
+        [
+          {
+            "node": "IF_Tiene_PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match_Hotel_Determinista": {
+      "main": [
+        [
+          {
+            "node": "IF_Datos_Extraidos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get_Companies": {
+      "main": [
+        [
+          {
+            "node": "Consolida_Ref",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code_Companies_JSON": {
+      "main": [
+        [
+          {
+            "node": "Detect_PDF_Adjunto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep_Portal_Payload": {
+      "main": [
+        [
+          {
+            "node": "HTTP_Portal_Enviar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook_Validacion": {
+      "main": [
+        [
+          {
+            "node": "Handler_Validacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handler_Validacion": {
+      "main": [
+        [
+          {
+            "node": "IF_Archivar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF_Archivar": {
+      "main": [
+        [
+          {
+            "node": "DocuWare_Validado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF_Es_Rechazo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DocuWare_Validado": {
+      "main": [
+        [
+          {
+            "node": "Responder_Portal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF_Tiene_PDF": {
+      "main": [
+        [
+          {
+            "node": "PDF_To_Base64",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build_Link_Only_Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build_Link_Only_Item": {
+      "main": [
+        [
+          {
+            "node": "Build_HTML_Centros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF_Solo_Enlace_Skip_Merge": {
+      "main": [
+        [
+          {
+            "node": "Passthrough_Enlace",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge_PDFs_Centros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Passthrough_Enlace": {
+      "main": [
+        [
+          {
+            "node": "IF_Necesita_Aprobacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF_Remitente_Interno": {
+      "main": [
+        [
+          {
+            "node": "Email_Acuse_Recibo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF_Error_Leve",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolida_Ref": {
+      "main": [
+        [
+          {
+            "node": "Get_CityZip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get_CityZip": {
+      "main": [
+        [
+          {
+            "node": "Code_Companies_JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF_Es_Rechazo": {
+      "main": [
+        [
+          {
+            "node": "Email_Notifica_Rechazo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder_Portal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email_Notifica_Rechazo": {
+      "main": [
+        [
+          {
+            "node": "Responder_Portal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "ca172e2f-e345-46da-8acf-57ed24f59047",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1d4b304c04a8a76be9d11b3ef67676b47d4aa9991956cd2b30f51cb76bd15a8c"
+  },
+  "nodeGroups": [],
+  "id": "YYM5EEUKqAiARnC7",
+  "tags": [
+    {
+      "updatedAt": "2026-05-27T12:25:24.984Z",
+      "createdAt": "2026-05-27T12:25:24.984Z",
+      "id": "lXs7nVj3FTz5eLI2",
+      "name": "test"
+    }
+  ]
+}
