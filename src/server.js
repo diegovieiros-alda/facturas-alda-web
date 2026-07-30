@@ -2,6 +2,7 @@ const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const path = require('path');
+const fs = require('fs');
 const fetch = require('node-fetch');
 const { init, queries, uploadPdf, downloadPdf, sesionesGet, sesionesSet, sesionesDestroy } = require('./db');
 
@@ -10,6 +11,15 @@ const PORT = process.env.PORT || 3000;
 const SESSION_SECRET = process.env.SESSION_SECRET || 'alda-facturas-secret-2026';
 const PORTAL_TOKEN = process.env.PORTAL_TOKEN || 'Ald4.2026.P0rtal';   // <-- NUEVO
 const SESSION_MAX_AGE = 8 * 60 * 60 * 1000;
+// Vacío en local/Vercel; en el server de la empresa se despliega bajo /facturas
+// (proxy Apache con el prefijo recortado) — ver BASE_PATH en el .env de ese server.
+const BASE_PATH = (process.env.BASE_PATH || '').replace(/\/+$/, '');
+
+// Las páginas traen "__BASE_PATH__" como placeholder en todas las rutas absolutas
+// (fetch, redirects) para que funcionen igual montadas en la raíz o en un subpath.
+const readHtml = (file) => fs.readFileSync(path.join(__dirname, '../public', file), 'utf8').replace(/__BASE_PATH__/g, BASE_PATH);
+const INDEX_HTML = readHtml('index.html');
+const LOGIN_HTML = readHtml('login.html');
 
 // express-session con MemoryStore (el default) pierde todas las sesiones en cada
 // cold start de Vercel — el usuario se veía deslogueado sin motivo aparente.
@@ -26,7 +36,6 @@ class SupabaseSessionStore extends session.Store {
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, '../public')));
 app.use(session({
   store: new SupabaseSessionStore(),
   secret: SESSION_SECRET,
@@ -38,7 +47,7 @@ app.use(session({
 const requireAuth = (req, res, next) => {
   if (req.session?.user) return next();
   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'No autorizado' });
-  res.redirect('/login');
+  res.redirect(BASE_PATH + '/login');
 };
 
 const requireAdmin = (req, res, next) => {
@@ -57,8 +66,8 @@ const requirePortalToken = (req, res, next) => {
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 app.get('/login', (req, res) => {
-  if (req.session?.user) return res.redirect('/');
-  res.sendFile(path.join(__dirname, '../public/login.html'));
+  if (req.session?.user) return res.redirect(BASE_PATH + '/');
+  res.type('html').send(LOGIN_HTML);
 });
 
 app.post('/api/login', async (req, res) => {
@@ -311,7 +320,7 @@ app.get('/api/stats', requireAuth, async (req, res) => res.json(await queries.ge
 // ── SPA fallback ──────────────────────────────────────────────────────────────
 
 app.get('*', requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/index.html'));
+  res.type('html').send(INDEX_HTML);
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────

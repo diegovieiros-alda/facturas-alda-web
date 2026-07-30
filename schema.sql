@@ -57,12 +57,10 @@ create table if not exists log_acciones (
   created_at timestamptz default now()
 );
 
--- ── Migración para bases de datos ya desplegadas ────────────────────────────
--- Ejecuta esto en el SQL Editor de Supabase si la tabla `facturas` ya existía
--- antes de estos cambios (CREATE TABLE IF NOT EXISTS no altera tablas existentes).
-alter table facturas add column if not exists dw_fpago_editado text;
-alter table facturas add column if not exists solo_enlace integer default 0;
-alter table facturas add column if not exists enlace_descarga text;
-alter table facturas add column if not exists enlaces_detectados text default '[]';
-create index if not exists idx_facturas_estado on facturas(estado);
-create index if not exists idx_facturas_created_at on facturas(created_at desc);
+-- Store de sesiones de express-session (ver src/db.js sesionesGet/Set/Destroy).
+create table if not exists sesiones (
+  sid text primary key,
+  sess jsonb not null,
+  expire timestamptz not null
+);
+create index if not exists idx_sesiones_expire on sesiones(expire);

@@ -1,50 +1,31 @@
 /**
- * db.js — Supabase (Postgres vía REST + Storage para PDFs)
- * Persistente entre despliegues, a diferencia del sql.js/archivo local anterior.
+ * db.js — PostgreSQL (pg) + PDFs en el filesystem local.
  */
+const fs = require('fs');
+const path = require('path');
 const bcrypt = require('bcryptjs');
-const { createClient } = require('@supabase/supabase-js');
+const { Pool } = require('pg');
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SECRET_KEY;
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  throw new Error('Faltan variables de entorno SUPABASE_URL / SUPABASE_SECRET_KEY');
-}
+if (!process.env.DATABASE_URL) throw new Error('Falta la variable de entorno DATABASE_URL');
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
-const PDF_BUCKET = 'facturas-pdfs';
-
-function must(res) {
-  if (res.error) { const e = new Error(res.error.message); e.code = res.error.code; throw e; }
-  return res.data;
-}
-
-// PostgREST devuelve el join como { ...campos, usuarios: { nombre } } — lo aplanamos a revisor_nombre
-function flattenRevisor(rows) {
-  return rows.map(({ usuarios, ...f }) => ({ ...f, revisor_nombre: usuarios?.nombre ?? null }));
-}
-
-async function ensureBucket() {
-  const { data: buckets, error } = await supabase.storage.listBuckets();
-  if (error) throw new Error(error.message);
-  if (buckets.some(b => b.name === PDF_BUCKET)) return;
-  const { error: createErr } = await supabase.storage.createBucket(PDF_BUCKET, { public: false });
-  if (createErr) throw new Error(createErr.message);
-}
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const PDF_DIR = path.join(__dirname, '../data/pdfs');
+const SCHEMA_FILE = path.join(__dirname, '../schema.sql');
 
 async function ensureDefaultUser() {
-  const { count, error } = await supabase.from('usuarios').select('*', { count: 'exact', head: true });
-  if (error) throw new Error(error.message);
-  if (count > 0) return;
+  const { rows } = await pool.query('SELECT count(*)::int AS n FROM usuarios');
+  if (rows[0].n > 0) return;
   const hash = bcrypt.hashSync('Alda2026!', 10);
-  must(await supabase.from('usuarios').insert({ username: 'admin', password: hash, nombre: 'Administrador', rol: 'admin' }));
+  await pool.query(
+    'INSERT INTO usuarios (username, password, nombre, rol) VALUES ($1,$2,$3,$4)',
+    ['admin', hash, 'Administrador', 'admin']
+  );
   console.log('✅ Usuario admin creado (pass: Alda2026!)');
 }
 
 async function seedExampleFacturas() {
-  const { count, error } = await supabase.from('facturas').select('*', { count: 'exact', head: true });
-  if (error) throw new Error(error.message);
-  if (count > 0) return;
+  const { rows } = await pool.query('SELECT count(*)::int AS n FROM facturas');
+  if (rows[0].n > 0) return;
 
   const examples = [
     {
@@ -58,7 +39,6 @@ async function seedExampleFacturas() {
       es_costes_generales: 1, email_remitente: 'compras@aldaexample.com',
       asunto_email: 'Factura mantenimiento junio', detected_pdf_name: 'Factura_001.pdf',
       errores_graves: '[]', errores_leves: JSON.stringify(['Importe redondeado']),
-      motivo_revision: null, pdf_filename: null, n8n_webhook_url: null,
     },
     {
       token: 'demo-factura-002', estado: 'pendiente',
@@ -71,7 +51,6 @@ async function seedExampleFacturas() {
       es_costes_generales: 0, email_remitente: 'logistica@hores.com',
       asunto_email: 'Factura limpieza', detected_pdf_name: 'Factura_002.pdf',
       errores_graves: '[]', errores_leves: '[]',
-      motivo_revision: null, pdf_filename: null, n8n_webhook_url: null,
     },
     {
       token: 'demo-factura-003', estado: 'pendiente',
@@ -84,158 +63,182 @@ async function seedExampleFacturas() {
       es_costes_generales: 1, email_remitente: 'facturas@techsupport.com',
       asunto_email: 'Factura soporte junio', detected_pdf_name: 'Factura_003.pdf',
       errores_graves: JSON.stringify(['NIF no coincide']), errores_leves: JSON.stringify(['Concepto incompleto']),
-      motivo_revision: 'Revisar datos del proveedor', pdf_filename: null, n8n_webhook_url: null,
+      motivo_revision: 'Revisar datos del proveedor',
     },
   ];
 
-  must(await supabase.from('facturas').insert(examples));
+  for (const e of examples) {
+    await queries.insertFactura.run(e);
+  }
   console.log('✅ Facturas de ejemplo insertadas');
 }
 
 async function init() {
-  await ensureBucket();
+  await pool.query(fs.readFileSync(SCHEMA_FILE, 'utf8'));
+  await fs.promises.mkdir(PDF_DIR, { recursive: true });
   await ensureDefaultUser();
   await seedExampleFacturas();
-  console.log('✅ Base de datos lista (Supabase)');
+  console.log('✅ Base de datos lista (PostgreSQL)');
 }
 
 async function uploadPdf(filename, buffer) {
-  const { error } = await supabase.storage.from(PDF_BUCKET).upload(filename, buffer, { contentType: 'application/pdf', upsert: true });
-  if (error) throw new Error(error.message);
+  await fs.promises.writeFile(path.join(PDF_DIR, filename), buffer);
 }
 
 async function downloadPdf(filename) {
-  const { data, error } = await supabase.storage.from(PDF_BUCKET).download(filename);
-  if (error) return null;
-  return Buffer.from(await data.arrayBuffer());
+  try {
+    return await fs.promises.readFile(path.join(PDF_DIR, filename));
+  } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw e;
+  }
 }
 
 // ── Sesiones (Store para express-session) ────────────────────────────────────
-// MemoryStore (el default de express-session) no sirve en Vercel: cada cold
-// start de la función serverless arranca con memoria vacía y tira las sesiones
-// activas. Se guarda en la tabla `sesiones` de Supabase, que ya usamos para todo
-// lo demás — evita añadir una dependencia nueva (connect-pg-simple, redis...)
-// solo para esto.
 async function sesionesGet(sid) {
-  const { data, error } = await supabase.from('sesiones').select('sess, expire').eq('sid', sid).maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data || new Date(data.expire) <= new Date()) return null;
-  return data.sess;
+  const { rows } = await pool.query('SELECT sess, expire FROM sesiones WHERE sid = $1', [sid]);
+  if (!rows[0] || new Date(rows[0].expire) <= new Date()) return null;
+  return rows[0].sess;
 }
 async function sesionesSet(sid, sess, expire) {
-  must(await supabase.from('sesiones').upsert({ sid, sess, expire: expire.toISOString() }));
+  await pool.query(
+    `INSERT INTO sesiones (sid, sess, expire) VALUES ($1,$2,$3)
+     ON CONFLICT (sid) DO UPDATE SET sess = $2, expire = $3`,
+    [sid, JSON.stringify(sess), expire]
+  );
   // ponytail: limpieza probabilística (1/50) en vez de un cron aparte — mismo patrón que
   // usa connect-pg-simple por defecto, suficiente para que la tabla no crezca sin límite.
   if (Math.random() < 0.02) {
-    await supabase.from('sesiones').delete().lt('expire', new Date().toISOString());
+    await pool.query('DELETE FROM sesiones WHERE expire < now()');
   }
 }
 async function sesionesDestroy(sid) {
-  must(await supabase.from('sesiones').delete().eq('sid', sid));
+  await pool.query('DELETE FROM sesiones WHERE sid = $1', [sid]);
 }
 
 // ── Queries ───────────────────────────────────────────────────────────────────
 
+const FACTURA_COLS = [
+  'token', 'estado', 'factura_numero', 'factura_fecha', 'proveedor_nombre', 'proveedor_cif',
+  'importe_total', 'base_imponible', 'forma_pago_detalle', 'concepto', 'hotel_nombre_odoo',
+  'codigo_hotel', 'dw_hotel', 'dw_fpago', 'sociedad', 'es_costes_generales', 'email_remitente',
+  'asunto_email', 'detected_pdf_name', 'errores_graves', 'errores_leves', 'motivo_revision',
+  'pdf_filename', 'n8n_webhook_url', 'solo_enlace', 'enlace_descarga', 'enlaces_detectados',
+];
+
 const queries = {
   insertFactura: {
-    run: async (p) => must(await supabase.from('facturas').insert({
-      token: p.token, estado: p.estado, factura_numero: p.factura_numero, factura_fecha: p.factura_fecha,
-      proveedor_nombre: p.proveedor_nombre, proveedor_cif: p.proveedor_cif, importe_total: p.importe_total,
-      base_imponible: p.base_imponible, forma_pago_detalle: p.forma_pago_detalle, concepto: p.concepto,
-      hotel_nombre_odoo: p.hotel_nombre_odoo, codigo_hotel: p.codigo_hotel, dw_hotel: p.dw_hotel, dw_fpago: p.dw_fpago,
-      sociedad: p.sociedad, es_costes_generales: p.es_costes_generales, email_remitente: p.email_remitente,
-      asunto_email: p.asunto_email, detected_pdf_name: p.detected_pdf_name, errores_graves: p.errores_graves,
-      errores_leves: p.errores_leves, motivo_revision: p.motivo_revision, pdf_filename: p.pdf_filename,
-      n8n_webhook_url: p.n8n_webhook_url, solo_enlace: p.solo_enlace, enlace_descarga: p.enlace_descarga,
-      enlaces_detectados: p.enlaces_detectados,
-    })),
+    run: async (p) => {
+      const values = FACTURA_COLS.map(c => p[c] ?? null);
+      const placeholders = FACTURA_COLS.map((_, i) => `$${i + 1}`).join(',');
+      await pool.query(
+        `INSERT INTO facturas (${FACTURA_COLS.join(',')}) VALUES (${placeholders})`,
+        values
+      );
+    },
   },
 
   // Listado unificado: filtro por estado + búsqueda de texto + paginación.
-  // Sustituye a los antiguos getPendientes/getByEstado/getAll (duplicaban la misma query).
   getFacturas: {
     all: async ({ estado, q, limit = 50, offset = 0 } = {}) => {
-      let query = supabase.from('facturas').select('*, usuarios(nombre)', { count: 'exact' });
-      if (estado && estado !== 'all') query = query.eq('estado', estado);
-      if (q) {
-        // ponytail: PostgREST .or() interpreta ',' '(' ')' como sintaxis de filtro — se limpian
-        // para que una búsqueda de texto normal no pueda inyectar cláusulas extra.
-        const safe = q.replace(/[,()%]/g, ' ').trim();
-        if (safe) query = query.or(`proveedor_nombre.ilike.%${safe}%,factura_numero.ilike.%${safe}%,hotel_nombre_odoo.ilike.%${safe}%,dw_hotel.ilike.%${safe}%`);
+      const where = [];
+      const params = [];
+      if (estado && estado !== 'all') { params.push(estado); where.push(`f.estado = $${params.length}`); }
+      if (q && q.trim()) {
+        params.push(`%${q.trim()}%`);
+        const i = params.length;
+        where.push(`(f.proveedor_nombre ILIKE $${i} OR f.factura_numero ILIKE $${i} OR f.hotel_nombre_odoo ILIKE $${i} OR f.dw_hotel ILIKE $${i})`);
       }
-      query = query.order('created_at', { ascending: false }).range(offset, offset + limit - 1);
-      const { data, error, count } = await query;
-      if (error) throw new Error(error.message);
-      return { items: flattenRevisor(data), total: count };
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      params.push(limit, offset);
+      const { rows } = await pool.query(
+        `SELECT f.*, u.nombre AS revisor_nombre, count(*) OVER() AS full_count
+         FROM facturas f LEFT JOIN usuarios u ON f.revisado_por = u.id
+         ${whereSql}
+         ORDER BY f.created_at DESC
+         LIMIT $${params.length - 1} OFFSET $${params.length}`,
+        params
+      );
+      const total = rows[0] ? Number(rows[0].full_count) : 0;
+      return { items: rows.map(({ full_count, ...f }) => f), total };
     },
   },
 
   getById: {
-    // Mismo join que getFacturas — sin esto, el revisor desaparecía del detalle
-    // cada vez que se recargaba una factura por id en vez de venir de la lista.
     get: async (id) => {
-      const { data, error } = await supabase.from('facturas').select('*, usuarios(nombre)').eq('id', id).maybeSingle();
-      if (error) throw new Error(error.message);
-      return data ? flattenRevisor([data])[0] : undefined;
+      const { rows } = await pool.query(
+        `SELECT f.*, u.nombre AS revisor_nombre FROM facturas f
+         LEFT JOIN usuarios u ON f.revisado_por = u.id WHERE f.id = $1`,
+        [id]
+      );
+      return rows[0];
     },
   },
   getByToken: {
-    get: async (token) => { const { data, error } = await supabase.from('facturas').select('*').eq('token', token).maybeSingle(); if (error) throw new Error(error.message); return data || undefined; },
-  },
-
-  updateEstado: {
-    run: async (p) => must(await supabase.from('facturas').update({
-      estado: p.estado, revisado_por: p.usuario_id, revisado_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(), hotel_nombre_editado: p.hotel_nombre_editado,
-      dw_fpago_editado: p.dw_fpago_editado, nota_revisor: p.nota_revisor,
-    }).eq('id', p.id)),
-  },
-
-  updatePdfFilename: {
-    run: async (id, pdf_filename, detected_pdf_name) => must(await supabase.from('facturas').update({
-      pdf_filename, detected_pdf_name, updated_at: new Date().toISOString(),
-    }).eq('id', id)),
-  },
-
-  getUserByUsername: {
-    get: async (username) => { const { data, error } = await supabase.from('usuarios').select('*').eq('username', username).maybeSingle(); if (error) throw new Error(error.message); return data || undefined; },
-  },
-  getAllUsers: {
-    all: async () => must(await supabase.from('usuarios').select('id,username,nombre,rol,created_at').order('nombre')),
-  },
-
-  insertUser: {
-    run: async (p) => {
-      const res = await supabase.from('usuarios').insert({ username: p.username, password: p.password, nombre: p.nombre, rol: p.rol });
-      if (res.error) { const e = new Error(res.error.message); e.code = res.error.code; throw e; }
-      return res.data;
+    get: async (token) => {
+      const { rows } = await pool.query('SELECT * FROM facturas WHERE token = $1', [token]);
+      return rows[0];
     },
   },
 
+  updateEstado: {
+    run: async (p) => pool.query(
+      `UPDATE facturas SET estado=$1, revisado_por=$2, revisado_at=now(), updated_at=now(),
+       hotel_nombre_editado=$3, dw_fpago_editado=$4, nota_revisor=$5 WHERE id=$6`,
+      [p.estado, p.usuario_id, p.hotel_nombre_editado, p.dw_fpago_editado, p.nota_revisor, p.id]
+    ),
+  },
+
+  updatePdfFilename: {
+    run: async (id, pdf_filename, detected_pdf_name) => pool.query(
+      `UPDATE facturas SET pdf_filename=$1, detected_pdf_name=$2, updated_at=now() WHERE id=$3`,
+      [pdf_filename, detected_pdf_name, id]
+    ),
+  },
+
+  getUserByUsername: {
+    get: async (username) => {
+      const { rows } = await pool.query('SELECT * FROM usuarios WHERE username = $1', [username]);
+      return rows[0];
+    },
+  },
+  getAllUsers: {
+    all: async () => {
+      const { rows } = await pool.query('SELECT id,username,nombre,rol,created_at FROM usuarios ORDER BY nombre');
+      return rows;
+    },
+  },
+
+  insertUser: {
+    // Postgres ya expone el unique-violation como err.code === '23505' — server.js lo traduce.
+    run: async (p) => pool.query(
+      'INSERT INTO usuarios (username, password, nombre, rol) VALUES ($1,$2,$3,$4)',
+      [p.username, p.password, p.nombre, p.rol]
+    ),
+  },
+
   deleteUser: {
-    run: async (id) => must(await supabase.from('usuarios').delete().eq('id', id).neq('rol', 'admin')),
+    run: async (id) => pool.query(`DELETE FROM usuarios WHERE id=$1 AND rol <> 'admin'`, [id]),
   },
 
   insertLog: {
-    run: async (fid, uid, accion, detalle) => must(await supabase.from('log_acciones').insert({ factura_id: fid, usuario_id: uid, accion, detalle })),
+    run: async (fid, uid, accion, detalle) => pool.query(
+      'INSERT INTO log_acciones (factura_id, usuario_id, accion, detalle) VALUES ($1,$2,$3,$4)',
+      [fid, uid, accion, detalle]
+    ),
   },
 
   getStats: {
-    // Contadores vía count:'exact', head:true (Postgres COUNT, no trae filas) — un
-    // select('estado') sin límite se topaba con el máximo de filas por defecto de
-    // PostgREST (1000) y devolvía conteos truncados en silencio pasadas ~1000 facturas.
     get: async () => {
-      const countEstado = async (estado) => {
-        let q = supabase.from('facturas').select('*', { count: 'exact', head: true });
-        if (estado) q = q.eq('estado', estado);
-        const { count, error } = await q;
-        if (error) throw new Error(error.message);
-        return count;
+      const { rows } = await pool.query('SELECT estado, count(*)::int AS n FROM facturas GROUP BY estado');
+      const byEstado = Object.fromEntries(rows.map(r => [r.estado, r.n]));
+      const total = rows.reduce((sum, r) => sum + r.n, 0);
+      return {
+        total,
+        pendientes: byEstado.pendiente || 0,
+        aprobadas: byEstado.aprobada || 0,
+        rechazadas: byEstado.rechazada || 0,
       };
-      const [total, pendientes, aprobadas, rechazadas] = await Promise.all([
-        countEstado(), countEstado('pendiente'), countEstado('aprobada'), countEstado('rechazada'),
-      ]);
-      return { total, pendientes, aprobadas, rechazadas };
     },
   },
 };

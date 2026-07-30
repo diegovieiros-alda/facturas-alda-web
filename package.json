@@ -7,10 +7,10 @@
     "start": "node src/server.js"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.110.1",
     "bcryptjs": "^2.4.3",
     "express": "^4.19.2",
     "express-session": "^1.18.0",
-    "node-fetch": "^2.7.0"
+    "node-fetch": "^2.7.0",
+    "pg": "^8.13.1"
   }
 }

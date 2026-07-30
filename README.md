@@ -3,9 +3,8 @@
 Portal web para revisar/aprobar/rechazar facturas procesadas por el workflow de n8n
 "Procesamiento Facturas Procurement", con archivado final en DocuWare.
 
-Persistencia: **Supabase** (Postgres + Storage). Funciona igual desde Vercel, un Synology NAS o
-cualquier otro host — la base de datos y los PDFs viven en Supabase, no en el disco local del
-servidor.
+Persistencia: **PostgreSQL** local + PDFs en disco (`data/pdfs/`). Pensado para correr en un
+servidor propio (systemd + proxy reverso), no en un host con filesystem efímero.
 
 ## Cómo funciona el flujo completo
 
@@ -23,53 +22,36 @@ respuesta del revisor.
 
 ---
 
-## 1. Crear el proyecto en Supabase
+## 1. Crear la base de datos PostgreSQL
 
-1. Crea un proyecto gratis en [supabase.com](https://supabase.com).
-2. Ve a **SQL Editor → New query**, pega el contenido de [`supabase_schema.sql`](./supabase_schema.sql)
-   y ejecútalo. Crea las tablas `usuarios`, `facturas` y `log_acciones`.
-3. Ve a **Project Settings → API** y copia:
-   - **Project URL** → variable `SUPABASE_URL`
-   - **secret key** (`sb_secret_...`, no la `publishable`) → variable `SUPABASE_SECRET_KEY`
+```bash
+sudo -u postgres psql -c "CREATE USER facturas_alda WITH PASSWORD 'elige-una-contraseña';"
+sudo -u postgres psql -c "CREATE DATABASE facturas_alda OWNER facturas_alda;"
+```
 
-El primer arranque del servidor crea automáticamente el bucket de Storage (`facturas-pdfs`), el
-usuario `admin` (contraseña `Alda2026!`) y 3 facturas de ejemplo si la tabla está vacía.
+No hace falta cargar [`schema.sql`](./schema.sql) a mano — el servidor lo ejecuta solo al arrancar
+(`CREATE TABLE IF NOT EXISTS`, es seguro correrlo varias veces). Usa esa cadena de conexión como
+`DATABASE_URL`, ej. `postgres://facturas_alda:elige-una-contraseña@localhost:5432/facturas_alda`.
 
-⚠️ La `secret key` da acceso total a la base de datos — trátala como una contraseña. Nunca la subas
-al repo ni la pegues en sitios públicos; guárdala solo como variable de entorno.
+El primer arranque del servidor también crea el usuario `admin` (contraseña `Alda2026!`) y 3
+facturas de ejemplo si la tabla está vacía.
 
 ---
 
 ## 2. Desplegar
 
-### Opción A — Vercel
-
-```bash
-npx vercel env add SUPABASE_URL production        # pega el Project URL
-npx vercel env add SUPABASE_SECRET_KEY production  # pega la secret key
-npx vercel --prod
-```
-
-El `vercel.json` ya incluye lo necesario para el build. No hay filesystem que gestionar — todo lo
-persistente vive en Supabase, así que los redeploys y cold starts ya **no** pierden datos (antes de
-Supabase esto era un problema real: cada redeploy borraba todo porque Vercel solo tiene `/tmp`
-efímero).
-
-Nota menor: las sesiones de login sí se invalidan en cada redeploy (se guardan en memoria del
-proceso, no en Supabase) — solo implica volver a hacer login, no pérdida de datos.
-
-### Opción B — Synology NAS / servidor propio
-
 ```bash
 cd facturas-web
 npm install
 cp .env.example .env
-# Editar .env con SUPABASE_URL, SUPABASE_SECRET_KEY, SESSION_SECRET, PORTAL_TOKEN
+# Editar .env con DATABASE_URL, SESSION_SECRET, PORTAL_TOKEN, BASE_PATH (si va bajo un subpath)
 node src/server.js
 ```
 
-Abre `http://IP-DEL-SERVIDOR:3000`. Autoarranque: Panel de control → Programador de tareas → Crear
-→ Tarea desencadenada → Evento: Arranque → Comando: `node /volume1/facturas-web/src/server.js`.
+En producción, correrlo bajo un gestor de procesos (systemd/pm2) para que reinicie solo. Si el
+portal va a vivir detrás de un proxy en una ruta como `/facturas` (no en la raíz del dominio), fijar
+`BASE_PATH=/facturas` en el `.env` — el proxy debe recortar ese prefijo antes de reenviar al puerto
+de la app (`ProxyPass /facturas/ http://127.0.0.1:PUERTO/` en Apache, o equivalente en nginx).
 
 **Credenciales por defecto:** usuario `admin`, contraseña `Alda2026!`. Cámbiala desde la sección de
 usuarios del portal.
@@ -80,7 +62,7 @@ usuarios del portal.
 
 ### Nodo `HTTP_Portal_Enviar`
 
-- **URL:** la del portal desplegado, por ejemplo `https://facturas-web-omega.vercel.app/api/webhook/factura`
+- **URL:** la del portal desplegado, por ejemplo `https://paneles.gestionalda.es/facturas/api/webhook/factura`
   (⚠️ revisa que no quede apuntando a una IP local vieja tipo `http://192.168.x.x:3000/...` — si el
   portal está en la nube, una IP de tu red local no es alcanzable desde n8n).
 - **Método:** POST
@@ -142,20 +124,20 @@ Si "no llegan facturas al portal", comprueba en este orden:
 
 1. **¿El portal responde?**
    ```bash
-   curl https://facturas-web-omega.vercel.app/api/health
+   curl https://paneles.gestionalda.es/facturas/api/health
    ```
    Debe devolver `{"ok":true,...}`.
 
 2. **¿El webhook acepta el token?**
    ```bash
-   curl -X POST https://facturas-web-omega.vercel.app/api/webhook/factura \
+   curl -X POST https://paneles.gestionalda.es/facturas/api/webhook/factura \
      -H "Content-Type: application/json" \
-     -H "X-Portal-Token: Ald4.2026.P0rtal" \
+     -H "X-Portal-Token: <valor de PORTAL_TOKEN>" \
      -d '{"factura_numero":"TEST","estado":"aprobada"}'
    ```
-   `200 {"ok":true,"token":"..."}` = el portal y Supabase funcionan. `401` = falta o está mal el
-   header `X-Portal-Token` en el nodo `HTTP_Portal_Enviar` de n8n. `500` = revisa `SUPABASE_URL` /
-   `SUPABASE_SECRET_KEY` en las variables de entorno del portal.
+   `200 {"ok":true,"token":"..."}` = el portal y la base de datos funcionan. `401` = falta o está mal
+   el header `X-Portal-Token` en el nodo `HTTP_Portal_Enviar` de n8n. `500` = revisa `DATABASE_URL`
+   en las variables de entorno del portal (`journalctl -u facturas-web -n 50` para ver el error).
 
 3. **¿n8n realmente está llamando al portal?** En n8n, abre el historial de ejecuciones del workflow
    y revisa el nodo `HTTP_Portal_Enviar`: ¿se ejecutó?, ¿qué URL usó?, ¿qué código de respuesta dio?
@@ -163,7 +145,6 @@ Si "no llegan facturas al portal", comprueba en este orden:
 4. **¿La factura llegó pero no la ves?** En el portal, revisa las 4 pestañas (Pendientes / Aprobadas /
    Rechazadas / Todas) — las auto-aprobadas (`estado: "aprobada"`) no aparecen en "Pendientes".
 
-5. **¿Los datos desaparecen solos?** Con Supabase esto ya no debería pasar (a diferencia del
-   filesystem efímero de Vercel usado antes). Si vuelve a pasar, revisa en el dashboard de Supabase
-   (Table Editor → facturas) si los registros están ahí — si están en Supabase pero no en el portal,
-   el problema es de sesión/caché del navegador, no de datos perdidos.
+5. **¿Los datos desaparecen solos?** Revisa en Postgres si los registros están ahí
+   (`sudo -u postgres psql facturas_alda -c "select count(*) from facturas;"`) — si están en la base
+   pero no en el portal, el problema es de sesión/caché del navegador, no de datos perdidos.

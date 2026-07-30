@@ -35,8 +35,8 @@ document.getElementById('password').addEventListener('keydown', e => { if(e.key=
 async function login(){
   const btn=document.getElementById('btn'), err=document.getElementById('err');
   btn.disabled=true; btn.textContent='Verificando...'; err.style.display='none';
-  const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:document.getElementById('username').value,password:document.getElementById('password').value})});
-  if(r.ok){window.location.href='/';}else{const d=await r.json();err.textContent=d.error||'Error';err.style.display='block';btn.disabled=false;btn.textContent='Acceder';}
+  const r=await fetch('__BASE_PATH__/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:document.getElementById('username').value,password:document.getElementById('password').value})});
+  if(r.ok){window.location.href='__BASE_PATH__/';}else{const d=await r.json();err.textContent=d.error||'Error';err.style.display='block';btn.disabled=false;btn.textContent='Acceder';}
 }
 </script>
 </body>
