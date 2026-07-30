@@ -105,7 +105,8 @@ const queries = {
       const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
       params.push(limit, offset);
       const { rows } = await pool.query(
-        `SELECT f.*, u.nombre AS revisor_nombre, count(*) OVER() AS full_count
+        `SELECT f.*, u.nombre AS revisor_nombre, count(*) OVER() AS full_count,
+                coalesce(sum(f.importe_total) OVER(), 0) AS full_sum
          FROM facturas f LEFT JOIN usuarios u ON f.revisado_por = u.id
          ${whereSql}
          ORDER BY f.created_at DESC
@@ -113,7 +114,8 @@ const queries = {
         params
       );
       const total = rows[0] ? Number(rows[0].full_count) : 0;
-      return { items: rows.map(({ full_count, ...f }) => f), total };
+      const totalImporte = rows[0] ? Number(rows[0].full_sum) : 0;
+      return { items: rows.map(({ full_count, full_sum, ...f }) => f), total, totalImporte };
     },
   },
 
@@ -182,8 +184,15 @@ const queries = {
   },
 
   getStats: {
-    get: async () => {
-      const { rows } = await pool.query('SELECT estado, count(*)::int AS n FROM facturas GROUP BY estado');
+    // Mismo rango de fechas que getFacturas.all — sin esto, los contadores de las
+    // pestañas mostraban el total global aunque hubiera un filtro de fechas activo.
+    get: async ({ desde, hasta } = {}) => {
+      const where = [];
+      const params = [];
+      if (desde) { params.push(desde); where.push(`factura_fecha >= $${params.length}`); }
+      if (hasta) { params.push(hasta); where.push(`factura_fecha <= $${params.length}`); }
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      const { rows } = await pool.query(`SELECT estado, count(*)::int AS n FROM facturas ${whereSql} GROUP BY estado`, params);
       const byEstado = Object.fromEntries(rows.map(r => [r.estado, r.n]));
       const total = rows.reduce((sum, r) => sum + r.n, 0);
       return {

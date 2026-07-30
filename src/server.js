@@ -165,8 +165,8 @@ const parseFactura = (f) => ({
 app.get('/api/facturas', requireAuth, async (req, res) => {
   const offset = Math.max(Number(req.query.offset) || 0, 0);
   const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
-  const { items, total } = await queries.getFacturas.all({ estado: req.query.estado, q: req.query.q, desde: req.query.desde, hasta: req.query.hasta, offset, limit });
-  res.json({ items: items.map(parseFactura), total });
+  const { items, total, totalImporte } = await queries.getFacturas.all({ estado: req.query.estado, q: req.query.q, desde: req.query.desde, hasta: req.query.hasta, offset, limit });
+  res.json({ items: items.map(parseFactura), total, totalImporte });
 });
 
 app.get('/api/facturas/:id', requireAuth, async (req, res) => {
@@ -315,7 +315,7 @@ app.delete('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
 
-app.get('/api/stats', requireAuth, async (req, res) => res.json(await queries.getStats.get()));
+app.get('/api/stats', requireAuth, async (req, res) => res.json(await queries.getStats.get({ desde: req.query.desde, hasta: req.query.hasta })));
 
 // ── SPA fallback ──────────────────────────────────────────────────────────────
 

@@ -44,6 +44,8 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .fecha-row span{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px}
 .btn-clear-fecha{background:none;border:1px solid var(--border);color:var(--text3);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;transition:all .15s;flex-shrink:0}
 .btn-clear-fecha:hover{color:var(--text);border-color:var(--text3)}
+.sum-importe{font-size:11px;color:var(--text3);text-align:right}
+.sum-importe:not(:empty)::before{content:'Suma: '}
 .factura-list{overflow-y:auto;flex:1}
 .factura-item{padding:14px 16px 14px 13px;border-bottom:1px solid var(--border);border-left:3px solid transparent;cursor:pointer;transition:background .12s,border-color .12s}
 .factura-item.estado-pendiente{border-left-color:rgba(245,158,11,.35)}
@@ -159,6 +161,7 @@ select option{background:var(--surface)}
         <input type="date" id="inputHasta" onchange="onFechaChange()">
         <button class="btn-clear-fecha" id="btnClearFecha" onclick="limpiarFechas()" style="display:none" title="Quitar filtro de fechas">✕</button>
       </div>
+      <div class="sum-importe" id="sumImporte"></div>
     </div>
     <div class="factura-list" id="listaFacturas">
       <div class="empty-state"><div class="spinner"></div>Cargando...</div>
@@ -267,17 +270,21 @@ async function cargarFacturas(reset=true){
   // respuesta más lenta de una carga anterior podía llegar después y pisar la
   // lista con datos de otro filtro (ej. mostrar "rechazadas" bajo la pestaña "aprobadas").
   const reqId=++facturasReqId;
-  const {items,total:t}=await fetch(`/api/facturas?${params}`).then(r=>r.json()).catch(()=>({items:[],total:0}));
+  const {items,total:t,totalImporte}=await fetch(`/api/facturas?${params}`).then(r=>r.json()).catch(()=>({items:[],total:0,totalImporte:0}));
   if(reqId!==facturasReqId) return;
   facturas = reset ? items : facturas.concat(items);
   total=t;
-  const stats=await fetch('/api/stats').then(r=>r.json()).catch(()=>({}));
+  const statsParams=new URLSearchParams();
+  if(desde) statsParams.set('desde',desde);
+  if(hasta) statsParams.set('hasta',hasta);
+  const stats=await fetch(`/api/stats?${statsParams}`).then(r=>r.json()).catch(()=>({}));
   if(reqId!==facturasReqId) return;
   document.getElementById('badgeTotal').textContent=total;
   document.getElementById('tabCountPendiente').textContent=stats.pendientes||0;
   document.getElementById('tabCountAprobada').textContent=stats.aprobadas||0;
   document.getElementById('tabCountRechazada').textContent=stats.rechazadas||0;
   document.getElementById('tabCountTotal').textContent=stats.total||0;
+  document.getElementById('sumImporte').textContent=total>0?`${Number(totalImporte).toLocaleString('es-ES',{minimumFractionDigits:2})} €`:'';
   renderLista();
   if(facturaActual){const u=facturas.find(f=>f.id===facturaActual.id);if(u)renderDetail(u);}
 }
@@ -323,7 +330,7 @@ function renderLista(){
   }
   el.innerHTML=facturas.map(f=>`
     <div class="factura-item estado-${f.estado}${facturaActual?.id===f.id?' selected':''}" onclick="seleccionar(${f.id})">
-      <div class="fi-header"><span class="fi-numero">${esc(f.factura_numero)||'Sin número'}</span><span class="fi-fecha">${fmtDate(f.created_at)}</span></div>
+      <div class="fi-header"><span class="fi-numero">${esc(f.factura_numero)||'Sin número'}</span><span class="fi-fecha" title="Recibida ${fmtDate(f.created_at)}">${fmtFecha(f.factura_fecha)}</span></div>
       <div class="fi-proveedor">${esc(f.proveedor_nombre)||'—'}</div>
       <div class="fi-footer"><span class="fi-importe">${f.importe_total?Number(f.importe_total).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</span><span class="fi-badge badge-${f.estado}">${f.estado}</span></div>
       <div class="fi-hotel">→ ${esc(f.hotel_nombre_editado||f.hotel_nombre_odoo)||'Sin identificar'}</div>
@@ -356,7 +363,7 @@ function renderDetail(f){
     <div class="card"><div class="card-header">Datos de la factura</div><div class="card-body">
       <div class="datos-grid">
         <div><div class="dato-label">Nº Factura</div><div class="dato-valor">${esc(f.factura_numero)||'—'}</div></div>
-        <div><div class="dato-label">Fecha</div><div class="dato-valor">${esc(f.factura_fecha)||'—'}</div></div>
+        <div><div class="dato-label">Fecha</div><div class="dato-valor">${fmtFecha(f.factura_fecha)}</div></div>
         <div><div class="dato-label">Importe total</div><div class="dato-valor importe">${f.importe_total?Number(f.importe_total).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</div></div>
         <div><div class="dato-label">Base imponible</div><div class="dato-valor">${f.base_imponible?Number(f.base_imponible).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</div></div>
         <div><div class="dato-label">Forma de pago</div><div class="dato-valor">${esc(f.forma_pago_detalle)||'—'}</div></div>
@@ -466,6 +473,9 @@ async function crearUsuario(){
 async function eliminarUsuario(id){if(!confirm('¿Eliminar usuario?'))return;await fetch(`/api/usuarios/${id}`,{method:'DELETE'});await cargarUsuarios();}
 async function logout(){await fetch('/api/logout',{method:'POST'});window.location.href='__BASE_PATH__/login';}
 function fmtDate(dt){if(!dt)return'—';return new Date(dt).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}
+// factura_fecha es texto "YYYY-MM-DD" plano (sin hora) — se reordena directo para evitar que
+// pasarlo por Date()/toLocaleString corra el día según la zona horaria del navegador.
+function fmtFecha(f){const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(f||'');return m?`${m[3]}/${m[2]}/${m[1]}`:'—';}
 function toast(msg,type='success'){const el=document.getElementById('toast');el.textContent=msg;el.className=`toast ${type} show`;setTimeout(()=>el.classList.remove('show'),3500);}
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
 init();
