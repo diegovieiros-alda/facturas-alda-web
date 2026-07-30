@@ -16,6 +16,9 @@
   --badge-pendiente-bg:#fef3e2;--badge-pendiente-fg:#9a5b13;
   --badge-aprobada-bg:#e7f8ef;--badge-aprobada-fg:#0d7a48;
   --badge-rechazada-bg:#fdeaea;--badge-rechazada-fg:#b42323;
+  --error-grave-bg:#fdecec;--error-grave-fg:#a3231f;
+  --error-leve-bg:#fef6e3;--error-leve-fg:#8a5a09;
+  --pdf-bg:#e4e7ee;
   --shadow-sm:0 1px 2px rgba(15,17,25,.06);--shadow-md:0 10px 30px rgba(15,17,25,.1);
 }
 :root[data-theme="dark"]{
@@ -27,6 +30,9 @@
   --badge-pendiente-bg:#451a03;--badge-pendiente-fg:#fed7aa;
   --badge-aprobada-bg:#052e16;--badge-aprobada-fg:#bbf7d0;
   --badge-rechazada-bg:#450a0a;--badge-rechazada-fg:#fecaca;
+  --error-grave-bg:#3b0000;--error-grave-fg:#fca5a5;
+  --error-leve-bg:#3b2000;--error-leve-fg:#fcd34d;
+  --pdf-bg:#222;
   --shadow-sm:0 1px 2px rgba(0,0,0,.25);--shadow-md:0 20px 60px rgba(0,0,0,.5);
 }
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
@@ -69,10 +75,30 @@ thead th.sorted{color:var(--accent)}
 thead th .arrow{font-size:10px;margin-left:3px;opacity:.7}
 thead th.no-sort{cursor:default}
 tbody td{padding:10px 14px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
-tbody tr{cursor:pointer;transition:background .1s}
-tbody tr:hover{background:var(--surface2)}
+tbody tr.fila{cursor:pointer;transition:background .1s}
+tbody tr.fila:hover{background:var(--surface2)}
+tbody tr.fila.expanded{background:var(--surface2)}
 tbody tr:last-child td{border-bottom:none}
 td.num{text-align:right;font-variant-numeric:tabular-nums}
+.chevron{display:inline-block;width:12px;color:var(--text3);font-size:10px}
+.expand-row td{padding:0;background:var(--bg);cursor:default}
+.expand-content{padding:18px 24px;display:grid;grid-template-columns:1fr 380px;gap:20px;animation:fadein .15s ease;white-space:normal}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+.expand-col{display:flex;flex-direction:column;gap:12px;min-width:0}
+.mini-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px}
+.mini-card-title{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px}
+.datos-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.dato-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+.dato-valor{font-size:13px;font-weight:500;white-space:normal;word-break:break-word}
+.dato-valor.importe{font-size:16px;font-weight:700;color:var(--green)}
+.errores{display:flex;flex-direction:column;gap:6px}
+.error-item{padding:8px 10px;border-radius:6px;font-size:12px;line-height:1.4;white-space:normal}
+.error-grave{background:var(--error-grave-bg);color:var(--error-grave-fg);border-left:3px solid var(--red)}
+.error-leve{background:var(--error-leve-bg);color:var(--error-leve-fg);border-left:3px solid var(--yellow)}
+.pdf-frame{width:100%;height:460px;border:none;background:var(--pdf-bg);border-radius:8px}
+.pdf-unavail{padding:30px 16px;text-align:center;color:var(--text3);font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px}
+.link-newtab{font-size:11px;color:var(--accent);text-decoration:none;align-self:flex-end;margin-bottom:6px}
+.link-newtab:hover{text-decoration:underline}
 .fi-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px;display:inline-block}
 .badge-pendiente{background:var(--badge-pendiente-bg);color:var(--badge-pendiente-fg)}
 .badge-aprobada{background:var(--badge-aprobada-bg);color:var(--badge-aprobada-fg)}
@@ -164,8 +190,9 @@ document.addEventListener('DOMContentLoaded',()=>{
 function esc(s){return s==null?'':String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function fmtFecha(f){const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(f||'');return m?`${m[3]}/${m[2]}/${m[1]}`:'—';}
 function fmtImporte(n){return n?Number(n).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—';}
+function fmtDateTime(dt){if(!dt)return'—';return new Date(dt).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}
 
-let items=[], offset=0, total=0, busqueda='', desde='', hasta='', sort='factura_fecha', dir='desc', buscarTimer=null;
+let items=[], offset=0, total=0, busqueda='', desde='', hasta='', sort='factura_fecha', dir='desc', buscarTimer=null, expandedId=null;
 const PAGE=100;
 
 let reqId=0;
@@ -209,21 +236,63 @@ function renderTabla(){
     tbody.innerHTML=`<tr><td colspan="7"><div class="empty-state"><div class="empty-state-icon">${filtrando?'⌕':'📄'}</div>${filtrando?'Ningún resultado con estos filtros':'No hay facturas'}</div></td></tr>`;
     return;
   }
-  tbody.innerHTML=items.map(f=>`
-    <tr onclick="abrirPdf(${f.id},${f.pdf_filename?'true':'false'})" title="${f.pdf_filename?'Abrir PDF':'Sin PDF'}">
-      <td>${fmtFecha(f.factura_fecha)}</td>
+  tbody.innerHTML=items.map(f=>{
+    const abierto=expandedId===f.id;
+    const fila=`
+    <tr class="fila${abierto?' expanded':''}" onclick="toggleExpand(${f.id})" title="Ver detalle">
+      <td><span class="chevron">${abierto?'▾':'▸'}</span>${fmtFecha(f.factura_fecha)}</td>
       <td>${esc(f.factura_numero)||'—'}</td>
       <td>${esc(f.proveedor_nombre)||'—'}</td>
       <td>${esc(f.hotel_nombre_editado||f.hotel_nombre_odoo)||'—'}</td>
       <td class="num">${fmtImporte(f.importe_total)}</td>
       <td><span class="fi-badge badge-${f.estado}">${f.estado}</span></td>
       <td>${esc(f.revisor_nombre)||'—'}</td>
-    </tr>`).join('');
+    </tr>`;
+    const expand=abierto?`<tr class="expand-row"><td colspan="7">${renderExpandido(f)}</td></tr>`:'';
+    return fila+expand;
+  }).join('');
 }
 
-function abrirPdf(id,tienePdf){
-  if(!tienePdf) return;
-  window.open('__BASE_PATH__/api/facturas/'+id+'/pdf','_blank');
+function toggleExpand(id){
+  expandedId = expandedId===id ? null : id;
+  renderTabla();
+}
+
+function renderExpandido(f){
+  const eg=Array.isArray(f.errores_graves)?f.errores_graves:[];
+  const el=Array.isArray(f.errores_leves)?f.errores_leves:[];
+  return `<div class="expand-content">
+    <div class="expand-col">
+      <div class="mini-card">
+        <div class="mini-card-title">Datos de la factura</div>
+        <div class="datos-grid">
+          <div><div class="dato-label">Nº Factura</div><div class="dato-valor">${esc(f.factura_numero)||'—'}</div></div>
+          <div><div class="dato-label">Fecha</div><div class="dato-valor">${fmtFecha(f.factura_fecha)}</div></div>
+          <div><div class="dato-label">Importe total</div><div class="dato-valor importe">${fmtImporte(f.importe_total)}</div></div>
+          <div><div class="dato-label">Base imponible</div><div class="dato-valor">${fmtImporte(f.base_imponible)}</div></div>
+          <div><div class="dato-label">Forma de pago</div><div class="dato-valor">${esc(f.forma_pago_detalle)||'—'}</div></div>
+          <div><div class="dato-label">CIF proveedor</div><div class="dato-valor">${esc(f.proveedor_cif)||'—'}</div></div>
+        </div>
+        ${f.concepto?`<div style="margin-top:10px"><div class="dato-label">Concepto</div><div class="dato-valor" style="font-size:12px;color:var(--text2)">${esc(f.concepto)}</div></div>`:''}
+      </div>
+      <div class="mini-card">
+        <div class="mini-card-title">Hotel / DocuWare</div>
+        <div class="datos-grid">
+          <div><div class="dato-label">Identificado como</div><div class="dato-valor">${esc(f.hotel_nombre_odoo)||'No identificado'}</div></div>
+          <div><div class="dato-label">Código hotel</div><div class="dato-valor">${esc(f.codigo_hotel)||'—'}</div></div>
+          <div><div class="dato-label">Sociedad</div><div class="dato-valor">${esc(f.sociedad)||'—'}</div></div>
+          <div><div class="dato-label">DocuWare hotel</div><div class="dato-valor">${esc(f.hotel_nombre_editado||f.dw_hotel)||'—'}</div></div>
+        </div>
+      </div>
+      ${(eg.length||el.length)?`<div class="mini-card"><div class="mini-card-title">Incidencias detectadas</div><div class="errores">${eg.map(e=>`<div class="error-item error-grave">🔴 ${esc(e)}</div>`).join('')}${el.map(e=>`<div class="error-item error-leve">🟡 ${esc(e)}</div>`).join('')}</div></div>`:''}
+      ${f.estado!=='pendiente'?`<div class="mini-card"><div class="mini-card-title">Revisión</div><div class="dato-valor">${esc(f.revisor_nombre)||'—'} · ${fmtDateTime(f.revisado_at)}</div>${f.nota_revisor?`<div class="dato-valor" style="margin-top:6px;font-size:12px;color:var(--text2);font-weight:400">${esc(f.nota_revisor)}</div>`:''}</div>`:''}
+    </div>
+    <div class="expand-col">
+      ${f.pdf_filename
+        ?`<a class="link-newtab" href="__BASE_PATH__/api/facturas/${f.id}/pdf" target="_blank" onclick="event.stopPropagation()">Abrir en pestaña nueva ↗</a><iframe class="pdf-frame" src="__BASE_PATH__/api/facturas/${f.id}/pdf"></iframe>`
+        :`<div class="pdf-unavail">📄 PDF no disponible${f.solo_enlace?' (esta factura solo llegó con enlace de descarga)':''}</div>`}
+    </div>
+  </div>`;
 }
 
 function onFiltroChange(){
