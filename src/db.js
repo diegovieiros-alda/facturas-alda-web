@@ -117,7 +117,7 @@ const queries = {
                 coalesce(sum(f.importe_total) OVER(), 0) AS full_sum
          FROM facturas f LEFT JOIN usuarios u ON f.revisado_por = u.id
          ${whereSql}
-         ORDER BY ${sortCol} ${sortDir}, f.id ${sortDir}
+         ORDER BY ${sortCol} ${sortDir} NULLS LAST, f.id ${sortDir}
          LIMIT $${params.length - 1} OFFSET $${params.length}`,
         params
       );
