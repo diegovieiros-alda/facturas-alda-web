@@ -165,7 +165,7 @@ const parseFactura = (f) => ({
 app.get('/api/facturas', requireAuth, async (req, res) => {
   const offset = Math.max(Number(req.query.offset) || 0, 0);
   const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
-  const { items, total } = await queries.getFacturas.all({ estado: req.query.estado, q: req.query.q, offset, limit });
+  const { items, total } = await queries.getFacturas.all({ estado: req.query.estado, q: req.query.q, desde: req.query.desde, hasta: req.query.hasta, offset, limit });
   res.json({ items: items.map(parseFactura), total });
 });
 

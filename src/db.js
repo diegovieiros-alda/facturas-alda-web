@@ -87,9 +87,9 @@ const queries = {
     },
   },
 
-  // Listado unificado: filtro por estado + búsqueda de texto + paginación.
+  // Listado unificado: filtro por estado + búsqueda de texto + rango de fechas + paginación.
   getFacturas: {
-    all: async ({ estado, q, limit = 50, offset = 0 } = {}) => {
+    all: async ({ estado, q, desde, hasta, limit = 50, offset = 0 } = {}) => {
       const where = [];
       const params = [];
       if (estado && estado !== 'all') { params.push(estado); where.push(`f.estado = $${params.length}`); }
@@ -98,6 +98,10 @@ const queries = {
         const i = params.length;
         where.push(`(f.proveedor_nombre ILIKE $${i} OR f.factura_numero ILIKE $${i} OR f.hotel_nombre_odoo ILIKE $${i} OR f.dw_hotel ILIKE $${i})`);
       }
+      // factura_fecha es texto (viene de n8n en formato ISO YYYY-MM-DD) — la comparación
+      // lexicográfica coincide con la cronológica sin necesidad de castear a date.
+      if (desde) { params.push(desde); where.push(`f.factura_fecha >= $${params.length}`); }
+      if (hasta) { params.push(hasta); where.push(`f.factura_fecha <= $${params.length}`); }
       const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
       params.push(limit, offset);
       const { rows } = await pool.query(
