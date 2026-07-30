@@ -20,6 +20,7 @@ const BASE_PATH = (process.env.BASE_PATH || '').replace(/\/+$/, '');
 const readHtml = (file) => fs.readFileSync(path.join(__dirname, '../public', file), 'utf8').replace(/__BASE_PATH__/g, BASE_PATH);
 const INDEX_HTML = readHtml('index.html');
 const LOGIN_HTML = readHtml('login.html');
+const HISTORICO_HTML = readHtml('historico.html');
 
 // express-session con MemoryStore (el default) pierde todas las sesiones en cada
 // cold start de Vercel — el usuario se veía deslogueado sin motivo aparente.
@@ -69,6 +70,8 @@ app.get('/login', (req, res) => {
   if (req.session?.user) return res.redirect(BASE_PATH + '/');
   res.type('html').send(LOGIN_HTML);
 });
+
+app.get('/historico', requireAuth, (req, res) => res.type('html').send(HISTORICO_HTML));
 
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
@@ -164,8 +167,12 @@ const parseFactura = (f) => ({
 
 app.get('/api/facturas', requireAuth, async (req, res) => {
   const offset = Math.max(Number(req.query.offset) || 0, 0);
-  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
-  const { items, total, totalImporte } = await queries.getFacturas.all({ estado: req.query.estado, q: req.query.q, desde: req.query.desde, hasta: req.query.hasta, offset, limit });
+  // Tope 1000 en vez de 200 — la página de histórico pide todo de una para la tabla/export CSV.
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 1000);
+  const { items, total, totalImporte } = await queries.getFacturas.all({
+    estado: req.query.estado, q: req.query.q, desde: req.query.desde, hasta: req.query.hasta,
+    sort: req.query.sort, dir: req.query.dir, offset, limit,
+  });
   res.json({ items: items.map(parseFactura), total, totalImporte });
 });
 

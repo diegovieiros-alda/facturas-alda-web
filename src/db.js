@@ -87,9 +87,15 @@ const queries = {
     },
   },
 
-  // Listado unificado: filtro por estado + búsqueda de texto + rango de fechas + paginación.
+  // Listado unificado: filtro por estado + búsqueda de texto + rango de fechas + orden + paginación.
   getFacturas: {
-    all: async ({ estado, q, desde, hasta, limit = 50, offset = 0 } = {}) => {
+    // Whitelist — el nombre de columna de ORDER BY no se puede parametrizar como valor normal,
+    // así que se valida contra esta lista en vez de interpolar lo que venga de la query string.
+    SORT_COLS: {
+      created_at: 'f.created_at', factura_fecha: 'f.factura_fecha', importe_total: 'f.importe_total',
+      proveedor_nombre: 'f.proveedor_nombre', estado: 'f.estado', factura_numero: 'f.factura_numero',
+    },
+    all: async ({ estado, q, desde, hasta, sort, dir, limit = 50, offset = 0 } = {}) => {
       const where = [];
       const params = [];
       if (estado && estado !== 'all') { params.push(estado); where.push(`f.estado = $${params.length}`); }
@@ -103,13 +109,15 @@ const queries = {
       if (desde) { params.push(desde); where.push(`f.factura_fecha >= $${params.length}`); }
       if (hasta) { params.push(hasta); where.push(`f.factura_fecha <= $${params.length}`); }
       const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      const sortCol = queries.getFacturas.SORT_COLS[sort] || 'f.created_at';
+      const sortDir = dir === 'asc' ? 'ASC' : 'DESC';
       params.push(limit, offset);
       const { rows } = await pool.query(
         `SELECT f.*, u.nombre AS revisor_nombre, count(*) OVER() AS full_count,
                 coalesce(sum(f.importe_total) OVER(), 0) AS full_sum
          FROM facturas f LEFT JOIN usuarios u ON f.revisado_por = u.id
          ${whereSql}
-         ORDER BY f.created_at DESC
+         ORDER BY ${sortCol} ${sortDir}, f.id ${sortDir}
          LIMIT $${params.length - 1} OFFSET $${params.length}`,
         params
       );

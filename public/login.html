@@ -4,22 +4,28 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Facturas Alda — Acceso</title>
+<script>(function(){try{var t=localStorage.getItem('theme');if(!t)t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Helvetica Neue',Arial,sans-serif;background:#0f1117;min-height:100vh;display:flex;align-items:center;justify-content:center}
-  .card{background:#1a1d27;border:1px solid #2a2d3e;border-radius:12px;padding:48px 40px;width:360px;box-shadow:0 24px 64px rgba(0,0,0,.4)}
-  .logo{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#6b7280;margin-bottom:8px}
-  h1{font-size:22px;font-weight:600;color:#f9fafb;margin-bottom:32px}
-  label{display:block;font-size:12px;font-weight:500;color:#9ca3af;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
-  input{width:100%;padding:11px 14px;background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;color:#f9fafb;font-size:14px;margin-bottom:16px;outline:none;transition:border-color .15s}
-  input:focus{border-color:#6366f1}
-  button{width:100%;padding:12px;background:#6366f1;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-top:8px;transition:background .15s}
-  button:hover{background:#5558e3}
+  :root{color-scheme:light;--bg:#f3f4f7;--surface:#ffffff;--border:#e0e3ea;--text:#1c2029;--text2:#5b6472;--text3:#8b93a3;--accent:#4f46e5;--accent2:#4338ca;--red:#dc2626;--error-bg:#fdeaea;--error-border:#f3b9b9;--error-fg:#a3231f;--shadow:0 24px 64px rgba(15,17,25,.12)}
+  :root[data-theme="dark"]{color-scheme:dark;--bg:#0f1117;--surface:#1a1d27;--border:#2a2d3e;--text:#f9fafb;--text2:#9ca3af;--text3:#6b7280;--accent:#6366f1;--accent2:#5558e3;--red:#ef4444;--error-bg:#3b1a1a;--error-border:#7f1d1d;--error-fg:#fca5a5;--shadow:0 24px 64px rgba(0,0,0,.4)}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;background:var(--bg);min-height:100vh;display:flex;align-items:center;justify-content:center;transition:background .15s}
+  .btn-theme{position:absolute;top:20px;right:20px;background:none;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px}
+  .btn-theme:hover{color:var(--text);background:var(--surface)}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:48px 40px;width:360px;box-shadow:var(--shadow)}
+  .logo{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--text3);margin-bottom:8px}
+  h1{font-size:22px;font-weight:600;color:var(--text);margin-bottom:32px}
+  label{display:block;font-size:12px;font-weight:500;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+  input{width:100%;padding:11px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;margin-bottom:16px;outline:none;transition:border-color .15s}
+  input:focus{border-color:var(--accent)}
+  button{width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-top:8px;transition:background .15s}
+  button:hover{background:var(--accent2)}
   button:disabled{opacity:.5;cursor:wait}
-  .error{background:#3b1a1a;border:1px solid #7f1d1d;color:#fca5a5;border-radius:8px;padding:10px 14px;font-size:13px;margin-top:12px;display:none}
+  .error{background:var(--error-bg);border:1px solid var(--error-border);color:var(--error-fg);border-radius:8px;padding:10px 14px;font-size:13px;margin-top:12px;display:none}
 </style>
 </head>
 <body>
+<button class="btn-theme" id="btnTheme" onclick="toggleTheme()" title="Cambiar tema">🌙</button>
 <div class="card">
   <p class="logo">Alda Hotels</p>
   <h1>Portal de Facturas</h1>
@@ -31,6 +37,13 @@
   <div class="error" id="err"></div>
 </div>
 <script>
+function toggleTheme(){
+  const next=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';
+  document.documentElement.setAttribute('data-theme',next);
+  localStorage.setItem('theme',next);
+  document.getElementById('btnTheme').textContent=next==='dark'?'☀️':'🌙';
+}
+document.getElementById('btnTheme').textContent=document.documentElement.getAttribute('data-theme')==='dark'?'☀️':'🌙';
 document.getElementById('password').addEventListener('keydown', e => { if(e.key==='Enter') login(); });
 async function login(){
   const btn=document.getElementById('btn'), err=document.getElementById('err');
