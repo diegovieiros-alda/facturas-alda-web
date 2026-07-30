@@ -23,61 +23,10 @@ async function ensureDefaultUser() {
   console.log('✅ Usuario admin creado (pass: Alda2026!)');
 }
 
-async function seedExampleFacturas() {
-  const { rows } = await pool.query('SELECT count(*)::int AS n FROM facturas');
-  if (rows[0].n > 0) return;
-
-  const examples = [
-    {
-      token: 'demo-factura-001', estado: 'pendiente',
-      factura_numero: 'F-2026-001', factura_fecha: '2026-06-10',
-      proveedor_nombre: 'Alda Proveedores S.L.', proveedor_cif: 'B12345678',
-      importe_total: 1250.5, base_imponible: 1037.19,
-      forma_pago_detalle: 'Transferencia', concepto: 'Mantenimiento de instalaciones',
-      hotel_nombre_odoo: 'Alda Sol Mediterráneo', codigo_hotel: 'ASM',
-      dw_hotel: 'Alda Sol Mediterráneo', dw_fpago: 'Transferencia', sociedad: 'Alda Hotels',
-      es_costes_generales: 1, email_remitente: 'compras@aldaexample.com',
-      asunto_email: 'Factura mantenimiento junio', detected_pdf_name: 'Factura_001.pdf',
-      errores_graves: '[]', errores_leves: JSON.stringify(['Importe redondeado']),
-    },
-    {
-      token: 'demo-factura-002', estado: 'pendiente',
-      factura_numero: 'F-2026-002', factura_fecha: '2026-06-12',
-      proveedor_nombre: 'Servicios Hores S.A.', proveedor_cif: 'A87654321',
-      importe_total: 842.0, base_imponible: 697.52,
-      forma_pago_detalle: 'Tarjeta', concepto: 'Suministro de material de limpieza',
-      hotel_nombre_odoo: 'Alda Marina Club', codigo_hotel: 'AMC',
-      dw_hotel: 'Alda Marina Club', dw_fpago: 'Tarjeta', sociedad: 'Alda Hotels',
-      es_costes_generales: 0, email_remitente: 'logistica@hores.com',
-      asunto_email: 'Factura limpieza', detected_pdf_name: 'Factura_002.pdf',
-      errores_graves: '[]', errores_leves: '[]',
-    },
-    {
-      token: 'demo-factura-003', estado: 'pendiente',
-      factura_numero: 'F-2026-003', factura_fecha: '2026-06-15',
-      proveedor_nombre: 'Tech Support Iberia', proveedor_cif: 'C11223344',
-      importe_total: 1589.2, base_imponible: 1317.85,
-      forma_pago_detalle: 'Transferencia', concepto: 'Soporte informático mensual',
-      hotel_nombre_odoo: 'Alda Centro Plaza', codigo_hotel: 'ACP',
-      dw_hotel: 'Alda Centro Plaza', dw_fpago: 'Transferencia', sociedad: 'Alda Hotels',
-      es_costes_generales: 1, email_remitente: 'facturas@techsupport.com',
-      asunto_email: 'Factura soporte junio', detected_pdf_name: 'Factura_003.pdf',
-      errores_graves: JSON.stringify(['NIF no coincide']), errores_leves: JSON.stringify(['Concepto incompleto']),
-      motivo_revision: 'Revisar datos del proveedor',
-    },
-  ];
-
-  for (const e of examples) {
-    await queries.insertFactura.run(e);
-  }
-  console.log('✅ Facturas de ejemplo insertadas');
-}
-
 async function init() {
   await pool.query(fs.readFileSync(SCHEMA_FILE, 'utf8'));
   await fs.promises.mkdir(PDF_DIR, { recursive: true });
   await ensureDefaultUser();
-  await seedExampleFacturas();
   console.log('✅ Base de datos lista (PostgreSQL)');
 }
 
