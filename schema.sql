@@ -39,6 +39,15 @@ create table if not exists facturas (
   enlace_descarga text,
   enlaces_detectados text default '[]',
   requiere_acceso_portal integer default 0,
+  id_transaccion text,
+  hotel_destino_factura text,
+  sociedad_destino_factura text,
+  nivel_validacion integer,
+  metodo_identificacion text,
+  resultado_docuware text,
+  fecha_docuware timestamptz,
+  estado_final text,
+  carpeta_imap text,
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
   revisado_por integer references usuarios(id),
@@ -47,9 +56,22 @@ create table if not exists facturas (
 );
 
 alter table facturas add column if not exists requiere_acceso_portal integer default 0;
+-- Campos "espejo" del log de Excel (Log_Facturas_PRO) que n8n calcula en dos fases:
+-- los primeros cinco llegan con el webhook inicial; los cuatro de DocuWare llegan
+-- después, en un segundo webhook que dispara Prep_Sheet_Centros tras archivar.
+alter table facturas add column if not exists id_transaccion text;
+alter table facturas add column if not exists hotel_destino_factura text;
+alter table facturas add column if not exists sociedad_destino_factura text;
+alter table facturas add column if not exists nivel_validacion integer;
+alter table facturas add column if not exists metodo_identificacion text;
+alter table facturas add column if not exists resultado_docuware text;
+alter table facturas add column if not exists fecha_docuware timestamptz;
+alter table facturas add column if not exists estado_final text;
+alter table facturas add column if not exists carpeta_imap text;
 
 create index if not exists idx_facturas_estado on facturas(estado);
 create index if not exists idx_facturas_created_at on facturas(created_at desc);
+create index if not exists idx_facturas_id_transaccion on facturas(id_transaccion);
 
 create table if not exists log_acciones (
   id serial primary key,

@@ -151,6 +151,11 @@ app.post('/api/webhook/factura', requirePortalToken, async (req, res) => {
       enlace_descarga:    data.enlace_descarga || null,
       enlaces_detectados: JSON.stringify(data.enlaces_detectados || []),
       requiere_acceso_portal: data.requiere_acceso_portal ? 1 : 0,
+      id_transaccion:      data.id_transaccion || null,
+      hotel_destino_factura: data.hotel_destino_factura || null,
+      sociedad_destino_factura: data.sociedad_destino_factura || null,
+      nivel_validacion:    data.nivel_validacion ?? null,
+      metodo_identificacion: data.metodo_identificacion || null,
     });
 
     res.json({ ok: true, token, posible_duplicado: !!duplicado });
@@ -164,6 +169,16 @@ app.post('/api/webhook/factura', requirePortalToken, async (req, res) => {
     console.error('Webhook error:', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// Segunda notificación de n8n, disparada tras Prep_Sheet_Centros (ya con el resultado
+// real de DocuWare) para la rama de auto-archivado — no lleva token, se correlaciona
+// por id_transaccion, que ya viaja en el webhook inicial de arriba.
+app.post('/api/webhook/factura-archivada', requirePortalToken, async (req, res) => {
+  const { id_transaccion, resultado_docuware, fecha_docuware, estado_final, carpeta_imap } = req.body;
+  if (!id_transaccion) return res.status(400).json({ error: 'Falta id_transaccion' });
+  await queries.updateArchivado.run({ id_transaccion, resultado_docuware, fecha_docuware, estado_final, carpeta_imap });
+  res.json({ ok: true });
 });
 
 // ── API Facturas ──────────────────────────────────────────────────────────────
@@ -241,6 +256,7 @@ app.post('/api/facturas/:id/aprobar', requireAuth, async (req, res) => {
   const hotelFinal = hotel_nombre_editado?.trim() || f.dw_hotel;
   const fpagoFinal = dw_fpago_editado?.trim() || f.dw_fpago;
   let mensaje = 'Factura aprobada';
+  let resultadoDocuware = null, fechaDocuware = null;
 
   if (f.n8n_webhook_url) {
     let pdf_base64 = null;
@@ -283,6 +299,8 @@ app.post('/api/facturas/:id/aprobar', requireAuth, async (req, res) => {
         return res.status(502).json({ error: 'n8n no pudo archivar la factura en DocuWare' + (body.error ? ': ' + body.error : '') + '. La factura sigue pendiente.' });
       }
       mensaje = 'Factura aprobada y enviada a DocuWare';
+      resultadoDocuware = 'OK';
+      fechaDocuware = new Date();
     } catch (e) {
       return res.status(502).json({ error: 'No se pudo contactar n8n: ' + e.message });
     }
@@ -290,7 +308,12 @@ app.post('/api/facturas/:id/aprobar', requireAuth, async (req, res) => {
     mensaje = 'Factura aprobada (sin URL de n8n configurada, no se envió a DocuWare)';
   }
 
-  await queries.updateEstado.run({ id: f.id, estado: 'aprobada', usuario_id: req.session.user.id, hotel_nombre_editado: hotel_nombre_editado || null, dw_fpago_editado: dw_fpago_editado || null, nota_revisor: nota_revisor || null });
+  await queries.updateEstado.run({
+    id: f.id, estado: 'aprobada', usuario_id: req.session.user.id,
+    hotel_nombre_editado: hotel_nombre_editado || null, dw_fpago_editado: dw_fpago_editado || null,
+    nota_revisor: nota_revisor || null, resultado_docuware: resultadoDocuware, fecha_docuware: fechaDocuware,
+    estado_final: 'Aprobada manualmente (portal)',
+  });
   await queries.insertLog.run(f.id, req.session.user.id, 'aprobada', `Hotel: ${hotelFinal}, Fpago: ${fpagoFinal}`);
   res.json({ ok: true, mensaje });
 });
@@ -315,7 +338,7 @@ app.post('/api/facturas/:id/rechazar', requireAuth, async (req, res) => {
     }
   }
 
-  await queries.updateEstado.run({ id: f.id, estado: 'rechazada', usuario_id: req.session.user.id, hotel_nombre_editado: null, nota_revisor: nota_revisor || null });
+  await queries.updateEstado.run({ id: f.id, estado: 'rechazada', usuario_id: req.session.user.id, hotel_nombre_editado: null, nota_revisor: nota_revisor || null, estado_final: 'Rechazada manualmente (portal)' });
   await queries.insertLog.run(f.id, req.session.user.id, 'rechazada', nota_revisor || '');
   res.json({ ok: true });
 });

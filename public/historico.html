@@ -307,6 +307,20 @@ function renderExpandido(f){
       </div>
       ${(eg.length||el.length)?`<div class="mini-card"><div class="mini-card-title">Incidencias detectadas</div><div class="errores">${eg.map(e=>`<div class="error-item error-grave">🔴 ${esc(e)}</div>`).join('')}${el.map(e=>`<div class="error-item error-leve">🟡 ${esc(e)}</div>`).join('')}</div></div>`:''}
       ${f.estado!=='pendiente'?`<div class="mini-card"><div class="mini-card-title">Revisión</div><div class="dato-valor">${esc(f.revisor_nombre)||'—'} · ${fmtDateTime(f.revisado_at)}</div>${f.nota_revisor?`<div class="dato-valor" style="margin-top:6px;font-size:12px;color:var(--text2);font-weight:400">${esc(f.nota_revisor)}</div>`:''}</div>`:''}
+      <div class="mini-card">
+        <div class="mini-card-title">Registro (mismos campos que el Excel)</div>
+        <div class="datos-grid">
+          <div><div class="dato-label">ID Transacción</div><div class="dato-valor" style="font-family:monospace;font-size:11px">${esc(f.id_transaccion)||'—'}</div></div>
+          <div><div class="dato-label">Nivel validación</div><div class="dato-valor">${f.nivel_validacion??'—'}</div></div>
+          <div><div class="dato-label">Hotel destino (factura)</div><div class="dato-valor">${esc(f.hotel_destino_factura)||'—'}</div></div>
+          <div><div class="dato-label">Sociedad destino (factura)</div><div class="dato-valor">${esc(f.sociedad_destino_factura)||'—'}</div></div>
+          <div><div class="dato-label">Resultado DocuWare</div><div class="dato-valor">${esc(f.resultado_docuware)||'—'}</div></div>
+          <div><div class="dato-label">Fecha DocuWare</div><div class="dato-valor">${fmtDateTime(f.fecha_docuware)}</div></div>
+          <div><div class="dato-label">Estado final</div><div class="dato-valor">${esc(f.estado_final)||'—'}</div></div>
+          <div><div class="dato-label">Carpeta IMAP</div><div class="dato-valor">${esc(f.carpeta_imap)||'—'}</div></div>
+        </div>
+        ${f.metodo_identificacion?`<div style="margin-top:10px"><div class="dato-label">Método identificación</div><div class="dato-valor" style="font-size:12px;color:var(--text2)">${esc(f.metodo_identificacion)}</div></div>`:''}
+      </div>
     </div>
     <div class="expand-col">
       ${f.pdf_filename
@@ -355,7 +369,8 @@ async function exportarCSV(){
   if(desde) params.set('desde',desde);
   if(hasta) params.set('hasta',hasta);
   const {items:rows}=await fetch(`/api/facturas?${params}`).then(r=>r.json());
-  const cols=['factura_fecha','factura_numero','proveedor_nombre','proveedor_cif','hotel_nombre_odoo','hotel_nombre_editado','importe_total','base_imponible','estado','revisor_nombre'];
+  const cols=['factura_fecha','factura_numero','proveedor_nombre','proveedor_cif','hotel_nombre_odoo','hotel_nombre_editado','importe_total','base_imponible','estado','revisor_nombre',
+    'id_transaccion','hotel_destino_factura','sociedad_destino_factura','nivel_validacion','metodo_identificacion','resultado_docuware','fecha_docuware','estado_final','carpeta_imap'];
   const csvEsc=v=>{ if(v==null) return ''; const s=String(v).replace(/"/g,'""'); return /[",\n]/.test(s)?`"${s}"`:s; };
   const csv=[cols.join(',')].concat(rows.map(r=>cols.map(c=>csvEsc(r[c])).join(','))).join('\n');
   const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});

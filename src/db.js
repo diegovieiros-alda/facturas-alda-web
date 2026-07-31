@@ -73,7 +73,8 @@ const FACTURA_COLS = [
   'codigo_hotel', 'dw_hotel', 'dw_fpago', 'sociedad', 'es_costes_generales', 'email_remitente',
   'asunto_email', 'detected_pdf_name', 'errores_graves', 'errores_leves', 'motivo_revision',
   'pdf_filename', 'n8n_webhook_url', 'solo_enlace', 'enlace_descarga', 'enlaces_detectados',
-  'requiere_acceso_portal',
+  'requiere_acceso_portal', 'id_transaccion', 'hotel_destino_factura', 'sociedad_destino_factura',
+  'nivel_validacion', 'metodo_identificacion',
 ];
 
 const queries = {
@@ -188,8 +189,22 @@ const queries = {
   updateEstado: {
     run: async (p) => pool.query(
       `UPDATE facturas SET estado=$1, revisado_por=$2, revisado_at=now(), updated_at=now(),
-       hotel_nombre_editado=$3, dw_fpago_editado=$4, nota_revisor=$5 WHERE id=$6`,
-      [p.estado, p.usuario_id, p.hotel_nombre_editado, p.dw_fpago_editado, p.nota_revisor, p.id]
+       hotel_nombre_editado=$3, dw_fpago_editado=$4, nota_revisor=$5,
+       resultado_docuware=coalesce($7,resultado_docuware), fecha_docuware=coalesce($8,fecha_docuware),
+       estado_final=coalesce($9,estado_final)
+       WHERE id=$6`,
+      [p.estado, p.usuario_id, p.hotel_nombre_editado, p.dw_fpago_editado, p.nota_revisor, p.id,
+       p.resultado_docuware ?? null, p.fecha_docuware ?? null, p.estado_final ?? null]
+    ),
+  },
+
+  // Segunda notificación de n8n (tras Prep_Sheet_Centros tras archivar en DocuWare),
+  // correlacionada por id_transaccion — no por token, que solo existe en la rama del portal.
+  updateArchivado: {
+    run: async (p) => pool.query(
+      `UPDATE facturas SET resultado_docuware=$1, fecha_docuware=$2, estado_final=$3,
+       carpeta_imap=$4, updated_at=now() WHERE id_transaccion=$5`,
+      [p.resultado_docuware ?? null, p.fecha_docuware ?? null, p.estado_final ?? null, p.carpeta_imap ?? null, p.id_transaccion]
     ),
   },
 
