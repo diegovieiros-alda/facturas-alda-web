@@ -113,6 +113,15 @@ app.post('/api/webhook/factura', requirePortalToken, async (req, res) => {
       }
     }
 
+    const duplicado = await queries.findDuplicado.get(data.factura_numero, data.proveedor_nombre, token);
+    const erroresLeves = data.errores_leves || [];
+    if (duplicado) {
+      erroresLeves.push(
+        `Posible duplicado: ya existe una factura de "${data.proveedor_nombre}" con el mismo número ` +
+        `(#${duplicado.id}, ${duplicado.estado}, recibida el ${new Date(duplicado.created_at).toLocaleDateString('es-ES')}) — revisar antes de aprobar.`
+      );
+    }
+
     await queries.insertFactura.run({
       token,
       estado:             data.estado === 'aprobada' ? 'aprobada' : 'pendiente',
@@ -134,7 +143,7 @@ app.post('/api/webhook/factura', requirePortalToken, async (req, res) => {
       asunto_email:       data.asunto_email || null,
       detected_pdf_name:  data.detected_pdf_name || null,
       errores_graves:     JSON.stringify(data.errores_graves || []),
-      errores_leves:      JSON.stringify(data.errores_leves || []),
+      errores_leves:      JSON.stringify(erroresLeves),
       motivo_revision:    data.motivo_revision || null,
       pdf_filename:       pdfFilename,
       n8n_webhook_url:    data.n8n_webhook_url || null,
@@ -143,7 +152,7 @@ app.post('/api/webhook/factura', requirePortalToken, async (req, res) => {
       enlaces_detectados: JSON.stringify(data.enlaces_detectados || []),
     });
 
-    res.json({ ok: true, token });
+    res.json({ ok: true, token, posible_duplicado: !!duplicado });
   } catch (err) {
     // token duplicado (n8n reintentando el mismo envío) — no es un error real,
     // la factura ya está registrada, respondemos ok en vez de 500.

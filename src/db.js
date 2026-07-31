@@ -137,6 +137,23 @@ const queries = {
       return rows[0];
     },
   },
+  // Mismo nº de factura + proveedor ya recibido con otro token — n8n puede reenviar
+  // el mismo email dos veces (reintento del workflow) y generar dos facturas "distintas".
+  findDuplicado: {
+    get: async (factura_numero, proveedor_nombre, token) => {
+      if (!factura_numero || !proveedor_nombre) return null;
+      const { rows } = await pool.query(
+        `SELECT id, token, estado, created_at FROM facturas
+         WHERE lower(trim(factura_numero)) = lower(trim($1))
+           AND lower(trim(proveedor_nombre)) = lower(trim($2))
+           AND token <> $3
+         ORDER BY created_at DESC LIMIT 1`,
+        [factura_numero, proveedor_nombre, token]
+      );
+      return rows[0] || null;
+    },
+  },
+
   getByToken: {
     get: async (token) => {
       const { rows } = await pool.query('SELECT * FROM facturas WHERE token = $1', [token]);

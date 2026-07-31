@@ -4,7 +4,8 @@
   "description": "Portal de validación de facturas Alda Hotels",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "node test/duplicado.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
