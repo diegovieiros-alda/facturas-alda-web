@@ -181,12 +181,14 @@ app.get('/api/facturas', requireAuth, async (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 1000);
   const { items, total, totalImporte } = await queries.getFacturas.all({
     estado: req.query.estado, q: req.query.q, desde: req.query.desde, hasta: req.query.hasta,
-    hotel: req.query.hotel, sociedad: req.query.sociedad, sort: req.query.sort, dir: req.query.dir, offset, limit,
+    hotel: req.query.hotel, sociedad: req.query.sociedad,
+    importeMin: req.query.importeMin, importeMax: req.query.importeMax,
+    sort: req.query.sort, dir: req.query.dir, offset, limit,
   });
   res.json({ items: items.map(parseFactura), total, totalImporte });
 });
 
-// Nota: debe ir antes de /api/facturas/:id, si no "filtros" matchea como :id.
+// Nota: deben ir antes de /api/facturas/:id, si no "filtros"/"..." matchea como :id.
 app.get('/api/facturas/filtros', requireAuth, async (req, res) => res.json(await queries.getFiltros.get()));
 
 app.get('/api/facturas/:id', requireAuth, async (req, res) => {
@@ -194,6 +196,8 @@ app.get('/api/facturas/:id', requireAuth, async (req, res) => {
   if (!f) return res.status(404).json({ error: 'No encontrada' });
   res.json(parseFactura(f));
 });
+
+app.get('/api/facturas/:id/log', requireAuth, async (req, res) => res.json(await queries.getLogFactura.all(Number(req.params.id))));
 
 app.get('/api/facturas/:id/pdf', requireAuth, async (req, res) => {
   const f = await queries.getById.get(Number(req.params.id));
@@ -297,6 +301,9 @@ app.post('/api/facturas/:id/rechazar', requireAuth, async (req, res) => {
   if (f.estado !== 'pendiente') return res.status(400).json({ error: 'Ya procesada' });
 
   const { nota_revisor } = req.body;
+  // Motivo obligatorio para auditoría — validado también aquí, no solo en el
+  // formulario, para que no se pueda saltear con una llamada directa a la API.
+  if (!nota_revisor || !nota_revisor.trim()) return res.status(400).json({ error: 'El motivo del rechazo es obligatorio' });
   if (f.n8n_webhook_url) {
     // Antes se ignoraba la respuesta de n8n aquí, a diferencia de /aprobar — un fallo
     // real (n8n caído, error al notificar el rechazo) quedaba invisible para el revisor.

@@ -10,7 +10,7 @@
 :root{
   color-scheme:light;
   --bg:#f3f4f7;--surface:#ffffff;--surface2:#eef0f4;--surface3:#e4e7ee;--border:#e0e3ea;
-  --text:#1c2029;--text2:#5b6472;--text3:#8b93a3;
+  --text:#1c2029;--text2:#5b6472;--text3:#6b7280;
   --accent:#4f46e5;--accent2:#4338ca;
   --green:#0f9d58;--green-dark:#0b7a44;--red:#dc2626;--red-dark:#b91c1c;--yellow:#b45309;--orange:#c2410c;
   --badge-pendiente-bg:#fef3e2;--badge-pendiente-fg:#9a5b13;
@@ -27,7 +27,7 @@
 :root[data-theme="dark"]{
   color-scheme:dark;
   --bg:#0f1117;--surface:#1a1d27;--surface2:#21253a;--surface3:#282c40;--border:#2a2d3e;
-  --text:#f9fafb;--text2:#9ca3af;--text3:#6b7280;
+  --text:#f9fafb;--text2:#9ca3af;--text3:#8792a6;
   --accent:#6366f1;--accent2:#818cf8;
   --green:#10b981;--green-dark:#059669;--red:#ef4444;--red-dark:#dc2626;--yellow:#f59e0b;--orange:#f97316;
   --badge-pendiente-bg:#451a03;--badge-pendiente-fg:#fed7aa;
@@ -72,10 +72,11 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .search-wrap{position:relative}
 .search-wrap::before{content:'⌕';position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px;pointer-events:none}
 .search-wrap input{padding-left:28px!important}
-.fecha-row{display:flex;align-items:center;gap:6px}
-.fecha-row input[type=date]{flex:1;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:11px;outline:none}
-.fecha-row input[type=date]:focus{border-color:var(--accent)}
-.fecha-row span{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px}
+.filtros-extra select,.filtros-extra input[type=text],.filtros-extra input[type=search]{width:100%;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;outline:none}
+.fecha-row,.importe-row{display:flex;align-items:center;gap:6px}
+.fecha-row input[type=date],.importe-row input[type=number]{flex:1;min-width:0;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:11px;outline:none}
+.fecha-row input[type=date]:focus,.importe-row input[type=number]:focus{border-color:var(--accent)}
+.fecha-row span,.importe-row span{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;flex-shrink:0}
 .btn-clear-fecha{background:none;border:1px solid var(--border);color:var(--text3);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;transition:all .15s;flex-shrink:0}
 .btn-clear-fecha:hover{color:var(--text);border-color:var(--text3)}
 .sum-importe{font-size:11px;color:var(--text3);text-align:right}
@@ -91,6 +92,10 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .fi-numero{font-size:13px;font-weight:600}
 .fi-fecha{font-size:11px;color:var(--text3)}
 .fi-proveedor{font-size:12px;color:var(--text2);margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fi-tags{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px}
+.tag-warn,.tag-info{font-size:9px;font-weight:700;padding:2px 6px;border-radius:10px;text-transform:uppercase;letter-spacing:.3px;display:inline-block}
+.tag-warn{background:var(--error-grave-bg);color:var(--error-grave-fg)}
+.tag-info{background:var(--error-leve-bg);color:var(--error-leve-fg)}
 .fi-footer{display:flex;align-items:center;justify-content:space-between}
 .fi-importe{font-size:13px;font-weight:600}
 .fi-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px}
@@ -132,6 +137,8 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .dato-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
 .dato-valor{font-size:13px;font-weight:500}
 .dato-valor.importe{font-size:19px;font-weight:700;color:var(--green);letter-spacing:-.3px}
+.dato-valor.importe.negativo{color:var(--red)}
+.dato-valor.dato-falta{color:var(--yellow);font-weight:600}
 .dato-alerta{background:var(--motivo-bg);border:1px solid var(--motivo-border);border-radius:6px;padding:8px}
 .errores{display:flex;flex-direction:column;gap:6px}
 .error-item{display:flex;align-items:flex-start;gap:8px;padding:9px 12px;border-radius:6px;font-size:12px;line-height:1.4}
@@ -151,6 +158,9 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .toast.success{background:var(--toast-success-bg);border:1px solid var(--green);color:var(--toast-success-fg)}
 .toast.error{background:var(--toast-error-bg);border:1px solid var(--red);color:var(--toast-error-fg)}
 .toast.show{opacity:1;transform:translateY(0)}
+.undo-banner{display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:12px 14px 12px 18px;border-radius:8px;font-size:13px;font-weight:600;z-index:998;box-shadow:var(--shadow-md);align-items:center;gap:14px}
+.undo-banner.show{display:flex}
+.undo-banner .btn{padding:6px 14px;font-size:12px}
 .form-label{display:block;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
 input[type=text],input[type=password],select{width:100%;padding:9px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:8px;outline:none}
 input[type=text]:focus,input[type=password]:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(99,102,241,.15)}
@@ -159,24 +169,28 @@ select option{background:var(--surface);color:var(--text)}
 .admin-user-name{flex:1;font-size:13px}
 .admin-user-rol{font-size:11px;color:var(--text3);background:var(--surface2);padding:2px 8px;border-radius:10px}
 .btn-sm{padding:4px 10px;font-size:11px;border-radius:6px}
-.kbd-hint{font-size:10px;color:var(--text3);margin-left:auto;white-space:nowrap}
-.kbd-hint kbd{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-family:inherit}
+.actividad-item{font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)}
+.actividad-item:last-child{border-bottom:none}
 </style>
 </head>
 <body>
 <div class="toast" id="toast"></div>
+<div class="undo-banner" id="undoBanner">
+  <span id="undoMsg"></span>
+  <button class="btn btn-secondary" onclick="deshacerAccion()">Deshacer</button>
+</div>
 
 <header>
   <div class="header-left">
-    <span class="logo-text"><span class="logo-mark"></span>Alda Hotels</span>
+    <span class="logo-text"><span class="logo-mark" aria-hidden="true"></span>Alda Hotels</span>
     <div class="logo-sep"></div>
     <span class="header-title">Validación de Facturas</span>
   </div>
   <div class="header-right">
     <span class="user-badge" id="userBadge">—</span>
-    <button class="btn-icon" onclick="window.location.href='__BASE_PATH__/historico'" title="Histórico completo">📊 Histórico</button>
-    <button class="btn-icon" id="btnTheme" onclick="toggleTheme()" title="Cambiar tema">🌙</button>
-    <button class="btn-icon" id="btnAdmin" style="display:none" onclick="openAdmin()">⚙ Usuarios</button>
+    <button class="btn-icon" onclick="window.location.href='__BASE_PATH__/historico'" title="Histórico completo" aria-label="Ver histórico completo">📊 Histórico</button>
+    <button class="btn-icon" id="btnTheme" onclick="toggleTheme()" title="Cambiar tema" aria-label="Cambiar tema claro/oscuro">🌙</button>
+    <button class="btn-icon" id="btnAdmin" style="display:none" onclick="openAdmin()" aria-label="Gestión de usuarios">⚙ Usuarios</button>
     <button class="btn-icon" onclick="logout()">Salir</button>
   </div>
 </header>
@@ -198,14 +212,23 @@ select option{background:var(--surface);color:var(--text)}
       <input type="text" name="username" autocomplete="username" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px">
       <input type="password" name="password" autocomplete="current-password" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px">
       <div class="search-wrap">
-        <input type="search" id="inputBuscar" name="busqueda-facturas" autocomplete="off" placeholder="Buscar por proveedor, nº factura, hotel..." oninput="onBuscarInput()" style="width:100%;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;outline:none">
+        <input type="search" id="inputBuscar" name="busqueda-facturas" autocomplete="off" placeholder="Buscar por proveedor, nº factura, hotel..." oninput="onBuscarInput()" aria-label="Buscar facturas" style="padding-left:28px">
       </div>
+      <select id="selHotelFiltro" onchange="onFiltroExtraChange()" aria-label="Filtrar por hotel">
+        <option value="">Todos los hoteles</option>
+      </select>
       <div class="fecha-row">
         <span>Del</span>
-        <input type="date" id="inputDesde" onchange="onFechaChange()">
+        <input type="date" id="inputDesde" onchange="onFechaChange()" aria-label="Fecha desde">
         <span>al</span>
-        <input type="date" id="inputHasta" onchange="onFechaChange()">
-        <button class="btn-clear-fecha" id="btnClearFecha" onclick="limpiarFechas()" style="display:none" title="Quitar filtro de fechas">✕</button>
+        <input type="date" id="inputHasta" onchange="onFechaChange()" aria-label="Fecha hasta">
+        <button class="btn-clear-fecha" id="btnClearFecha" onclick="limpiarFechas()" style="display:none" title="Quitar filtro de fechas" aria-label="Quitar filtro de fechas">✕</button>
+      </div>
+      <div class="importe-row">
+        <span>€</span>
+        <input type="number" id="inputImporteMin" placeholder="Mín" onchange="onFiltroExtraChange()" aria-label="Importe mínimo">
+        <span>–</span>
+        <input type="number" id="inputImporteMax" placeholder="Máx" onchange="onFiltroExtraChange()" aria-label="Importe máximo">
       </div>
       <div class="sum-importe" id="sumImporte"></div>
     </div>
@@ -244,8 +267,8 @@ select option{background:var(--surface);color:var(--text)}
   <div class="modal">
     <h3>✗ Rechazar factura</h3>
     <p style="font-size:13px;color:var(--text2);margin-bottom:16px">La factura quedará marcada como rechazada.</p>
-    <label class="form-label">Motivo (opcional)</label>
-    <textarea class="input-nota" id="inputNotaRechazar" placeholder="Explica el motivo..."></textarea>
+    <label class="form-label">Motivo (obligatorio, queda registrado para auditoría)</label>
+    <textarea class="input-nota" id="inputNotaRechazar" placeholder="Explica el motivo..." required></textarea>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('modalRechazar')">Cancelar</button>
       <button class="btn btn-danger" onclick="confirmarRechazar()">Rechazar factura</button>
@@ -282,7 +305,7 @@ const HOTELES={"012":"Coste General Consultores Hoteleros Integrales S.L","100":
 const MOTIVOS_HOTEL = ['factura_dirigida_a_sociedad', 'multiples_centros', 'costes_generales_posible_hotel'];
 
 let facturas=[], facturaActual=null, filtroActual='pendiente', me=null;
-let offset=0, total=0, busqueda='', buscarTimer=null, desde='', hasta='';
+let offset=0, total=0, busqueda='', buscarTimer=null, desde='', hasta='', hotelFiltro='', importeMin='', importeMax='';
 const PAGE=50;
 
 // La sesión puede expirar (ej. redeploy del servidor) — si cualquier fetch devuelve 401,
@@ -319,6 +342,8 @@ async function init(){
   me=await fetch('/api/me').then(r=>r.json());
   document.getElementById('userBadge').textContent=me.nombre;
   if(me.rol==='admin') document.getElementById('btnAdmin').style.display='';
+  const {hoteles}=await fetch('/api/facturas/filtros').then(r=>r.json()).catch(()=>({hoteles:[]}));
+  document.getElementById('selHotelFiltro').insertAdjacentHTML('beforeend', hoteles.map(h=>`<option value="${esc(h)}">${esc(h)}</option>`).join(''));
   await cargarFacturas();
   setInterval(cargarFacturas,30000);
 }
@@ -331,6 +356,9 @@ async function cargarFacturas(reset=true){
   if(busqueda) params.set('q',busqueda);
   if(desde) params.set('desde',desde);
   if(hasta) params.set('hasta',hasta);
+  if(hotelFiltro) params.set('hotel',hotelFiltro);
+  if(importeMin!=='') params.set('importeMin',importeMin);
+  if(importeMax!=='') params.set('importeMax',importeMax);
   // Cambiar de pestaña rápido dispara varias fetch en paralelo — sin esto, una
   // respuesta más lenta de una carga anterior podía llegar después y pisar la
   // lista con datos de otro filtro (ej. mostrar "rechazadas" bajo la pestaña "aprobadas").
@@ -376,6 +404,13 @@ function limpiarFechas(){
   cargarFacturas();
 }
 
+function onFiltroExtraChange(){
+  hotelFiltro=document.getElementById('selHotelFiltro').value;
+  importeMin=document.getElementById('inputImporteMin').value;
+  importeMax=document.getElementById('inputImporteMax').value;
+  cargarFacturas();
+}
+
 function setFiltro(f,el){
   filtroActual=f;
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
@@ -385,21 +420,35 @@ function setFiltro(f,el){
   cargarFacturas();
 }
 
+// Etiquetas de la lista para casos que hacen perder tiempo al validar: mismo
+// número de factura repetido, sin hotel identificado, o importe negativo (abono).
+function tagsFactura(f){
+  const tags=[];
+  if(f.posible_duplicado) tags.push('<span class="tag-warn">⚠ Duplicada</span>');
+  if(!f.hotel_nombre_editado && (!f.hotel_nombre_odoo || f.hotel_nombre_odoo==='No identificado')) tags.push('<span class="tag-warn">Sin hotel</span>');
+  if(f.importe_total!=null && f.importe_total<0) tags.push('<span class="tag-info">↩ Abono</span>');
+  return tags.join('');
+}
+
 const EMPTY_MSG={pendiente:'No hay facturas pendientes',aprobada:'No hay facturas aprobadas',rechazada:'No hay facturas rechazadas',all:'No hay facturas'};
 function renderLista(){
   const el=document.getElementById('listaFacturas');
   if(!facturas.length){
-    const filtrando=busqueda||desde||hasta;
+    const filtrando=busqueda||desde||hasta||hotelFiltro||importeMin!==''||importeMax!=='';
     el.innerHTML=`<div class="empty-state"><div class="empty-state-icon">${filtrando?'⌕':'✓'}</div>${filtrando?'Ningún resultado con estos filtros':EMPTY_MSG[filtroActual]}</div>`;
     return;
   }
-  el.innerHTML=facturas.map(f=>`
+  el.innerHTML=facturas.map(f=>{
+    const tags=tagsFactura(f);
+    return `
     <div class="factura-item estado-${f.estado}${facturaActual?.id===f.id?' selected':''}" onclick="seleccionar(${f.id})">
       <div class="fi-header"><span class="fi-numero">${esc(f.factura_numero)||'Sin número'}</span><span class="fi-fecha" title="Recibida ${fmtDate(f.created_at)}">${fmtFecha(f.factura_fecha)}</span></div>
       <div class="fi-proveedor">${esc(f.proveedor_nombre)||'—'}</div>
-      <div class="fi-footer"><span class="fi-importe">${f.importe_total?Number(f.importe_total).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</span><span class="fi-badge badge-${f.estado}">${f.estado}</span></div>
+      ${tags?`<div class="fi-tags">${tags}</div>`:''}
+      <div class="fi-footer"><span class="fi-importe">${f.importe_total!=null?Number(f.importe_total).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</span><span class="fi-badge badge-${f.estado}">${f.estado}</span></div>
       <div class="fi-hotel">→ ${esc(f.hotel_nombre_editado||f.hotel_nombre_odoo)||'Sin identificar'}</div>
-    </div>`).join('')
+    </div>`;
+  }).join('')
     + (facturas.length<total?`<div style="padding:12px;text-align:center"><button class="btn btn-secondary btn-sm" onclick="cargarMas()">Cargar más (${facturas.length}/${total})</button></div>`:'');
 }
 
@@ -416,11 +465,19 @@ function renderDetail(f){
   const motivoMap={'factura_dirigida_a_sociedad':'📋 Factura dirigida a sociedad — requiere imputación manual','multiples_centros':'🏨 Múltiples centros detectados','costes_generales_posible_hotel':'🔍 Posible hotel no identificado correctamente'};
   const motivoTxt=motivoMap[f.motivo_revision]||'';
   const alertaHotel=MOTIVOS_HOTEL.includes(f.motivo_revision);
+  const tags=tagsFactura(f);
+  // "Falta" = dato que normalmente debería venir dado que la factura sí tiene
+  // importe/es real, distinto de "no aplica" — se resalta en vez de mostrar un
+  // guion mudo igual que cualquier campo opcional.
+  const faltaBase = f.importe_total!=null && f.base_imponible==null;
+  const faltaFpago = f.importe_total!=null && !f.forma_pago_detalle;
+  const faltaEmail = !f.email_remitente;
   document.getElementById('detail').innerHTML=`
     <div class="detail-header">
       <div>
-        <div class="detail-numero">${esc(f.factura_numero)||'Sin número'}${f.factura_numero?`<button class="btn-copy" data-copy="${esc(f.factura_numero)}" onclick="copiar(this.dataset.copy)" title="Copiar número">📋</button>`:''}${f.estado!=='pendiente'?` <span class="fi-badge badge-${f.estado}" style="font-size:12px;margin-left:8px">${f.estado}</span>`:''}</div>
-        <div class="detail-proveedor">${esc(f.proveedor_nombre)||'—'}${f.proveedor_cif?` · ${esc(f.proveedor_cif)}<button class="btn-copy" data-copy="${esc(f.proveedor_cif)}" onclick="copiar(this.dataset.copy)" title="Copiar CIF">📋</button>`:''}</div>
+        <div class="detail-numero">${esc(f.factura_numero)||'Sin número'}${f.factura_numero?`<button class="btn-copy" data-copy="${esc(f.factura_numero)}" onclick="copiar(this.dataset.copy)" title="Copiar número" aria-label="Copiar número de factura">📋</button>`:''}${f.estado!=='pendiente'?` <span class="fi-badge badge-${f.estado}" style="font-size:12px;margin-left:8px">${f.estado}</span>`:''}
+        ${tags?`<div class="fi-tags" style="margin-top:6px">${tags}</div>`:''}</div>
+        <div class="detail-proveedor">${esc(f.proveedor_nombre)||'—'}${f.proveedor_cif?` · ${esc(f.proveedor_cif)}<button class="btn-copy" data-copy="${esc(f.proveedor_cif)}" onclick="copiar(this.dataset.copy)" title="Copiar CIF" aria-label="Copiar CIF del proveedor">📋</button>`:''}</div>
       </div>
       ${isPendiente?`<div class="detail-actions"><button class="btn btn-danger" onclick="openRechazar()">✗ Rechazar <span style="opacity:.6">(R)</span></button><button class="btn btn-primary" onclick="openAprobar()">✓ Aprobar <span style="opacity:.6">(A)</span></button></div>`:`<div style="font-size:12px;color:var(--text3)">Revisada por ${esc(f.revisor_nombre)||'—'}<br>${fmtDate(f.revisado_at)}</div>`}
     </div>
@@ -431,9 +488,9 @@ function renderDetail(f){
         <div class="datos-grid">
           <div><div class="dato-label">Nº Factura</div><div class="dato-valor">${esc(f.factura_numero)||'—'}</div></div>
           <div><div class="dato-label">Fecha</div><div class="dato-valor">${fmtFecha(f.factura_fecha)}</div></div>
-          <div><div class="dato-label">Importe total</div><div class="dato-valor importe">${f.importe_total?Number(f.importe_total).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</div></div>
-          <div><div class="dato-label">Base imponible</div><div class="dato-valor">${f.base_imponible?Number(f.base_imponible).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</div></div>
-          <div><div class="dato-label">Forma de pago</div><div class="dato-valor">${esc(f.forma_pago_detalle)||'—'}</div></div>
+          <div><div class="dato-label">Importe total</div><div class="dato-valor importe${f.importe_total<0?' negativo':''}">${f.importe_total!=null?Number(f.importe_total).toLocaleString('es-ES',{minimumFractionDigits:2})+' €'+(f.importe_total<0?' (abono)':''):'—'}</div></div>
+          <div><div class="dato-label">Base imponible</div><div class="dato-valor${faltaBase?' dato-falta':''}">${f.base_imponible!=null?Number(f.base_imponible).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':(faltaBase?'⚠ Falta':'—')}</div></div>
+          <div><div class="dato-label">Forma de pago</div><div class="dato-valor${faltaFpago?' dato-falta':''}">${esc(f.forma_pago_detalle)||(faltaFpago?'⚠ Falta':'—')}</div></div>
           <div><div class="dato-label">Recibida</div><div class="dato-valor">${fmtDate(f.created_at)}</div></div>
         </div>
         ${f.concepto?`<div style="margin-top:12px"><div class="dato-label">Concepto</div><div class="dato-valor" style="font-size:12px;line-height:1.5;color:var(--text2)">${esc(f.concepto)}</div></div>`:''}
@@ -450,15 +507,27 @@ function renderDetail(f){
       </div></div>
       <div class="card"><div class="card-header">Email de origen</div><div class="card-body">
         <div class="datos-grid">
-          <div><div class="dato-label">Remitente</div><div class="dato-valor" style="font-size:12px">${esc(f.email_remitente)||'—'}</div></div>
+          <div><div class="dato-label">Remitente</div><div class="dato-valor${faltaEmail?' dato-falta':''}" style="font-size:12px">${esc(f.email_remitente)||(faltaEmail?'⚠ Falta':'—')}</div></div>
           <div><div class="dato-label">Archivo</div><div class="dato-valor" style="font-size:12px">${esc(f.detected_pdf_name)||'—'}</div></div>
         </div>
         ${f.asunto_email?`<div style="margin-top:8px"><div class="dato-label">Asunto</div><div class="dato-valor" style="font-size:12px;color:var(--text2)">${esc(f.asunto_email)}</div></div>`:''}
       </div></div>
+      <div id="actividadCard"></div>
       <div class="card"><div class="card-header">Factura PDF</div>
-        ${f.pdf_filename?`<iframe class="pdf-frame" src="__BASE_PATH__/api/facturas/${f.id}/pdf"></iframe>`:renderPdfFaltante(f)}
+        ${f.pdf_filename?`<iframe class="pdf-frame" src="__BASE_PATH__/api/facturas/${f.id}/pdf" title="PDF de la factura"></iframe>`:renderPdfFaltante(f)}
       </div>
     </div>`;
+  cargarActividad(f.id);
+}
+
+async function cargarActividad(id){
+  const logs=await fetch(`/api/facturas/${id}/log`).then(r=>r.json()).catch(()=>[]);
+  const el=document.getElementById('actividadCard');
+  if(!el) return; // el usuario ya cambió de factura mientras esto cargaba
+  if(!logs.length){ el.innerHTML=''; return; }
+  el.innerHTML=`<div class="card"><div class="card-header">Actividad</div><div class="card-body">
+    ${logs.map(l=>`<div class="actividad-item"><strong>${esc(l.accion)}</strong> por ${esc(l.usuario_nombre)||'—'} · <span style="color:var(--text3)">${fmtDate(l.created_at)}</span>${l.detalle?`<div style="color:var(--text2);margin-top:2px">${esc(l.detalle)}</div>`:''}</div>`).join('')}
+  </div></div>`;
 }
 
 function renderPdfFaltante(f){
@@ -476,7 +545,7 @@ function renderPdfFaltante(f){
     <div>📄 ${mensaje}</div>
     ${links?`<div style="width:100%;text-align:left">${links}</div>`:''}
     ${puedeSubir?`<div style="width:100%;text-align:left;margin-top:8px">
-      <label class="form-label">Descarga el PDF del enlace y súbelo aquí para poder aprobar</label>
+      <label class="form-label" for="inputSubirPdf">Descarga el PDF del enlace y súbelo aquí para poder aprobar</label>
       <input type="file" accept="application/pdf" id="inputSubirPdf" style="width:100%;font-size:12px;color:var(--text2);margin-bottom:8px">
       <button class="btn btn-secondary btn-sm" onclick="subirPdf(${f.id})">Subir PDF</button>
     </div>`:''}
@@ -526,25 +595,60 @@ function avanzarSiguiente(idxAnterior){
   document.getElementById('detail').innerHTML='<div class="detail-empty"><div class="detail-empty-icon">✓</div><div>No quedan facturas pendientes</div></div>';
 }
 
-async function confirmarAprobar(){
-  const idxAnterior=facturas.findIndex(f=>f.id===facturaActual.id);
-  const btn=document.getElementById('btnConfAprobar');
-  btn.disabled=true;btn.textContent='Enviando...';
-  const r=await fetch(`/api/facturas/${facturaActual.id}/aprobar`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hotel_nombre_editado:document.getElementById('inputHotel').value,dw_fpago_editado:document.getElementById('inputFpago').value,nota_revisor:document.getElementById('inputNotaAprobar').value})});
-  const d=await r.json();
-  btn.disabled=false;btn.textContent='Confirmar y enviar a DocuWare';
-  closeModal('modalAprobar');
-  if(r.ok){toast('✓ '+(d.mensaje||'Factura aprobada'),'success');await cargarFacturas();avanzarSiguiente(idxAnterior);}
-  else toast('Error: '+d.error,'error');
+// ── Confirmación con "deshacer" ──────────────────────────────────────────────
+// Aprobar/rechazar dispara un archivado/notificación real en DocuWare/n8n, así
+// que en vez de ejecutarlo al toque se deja una ventana de unos segundos para
+// cancelar por error de clic, en vez de un confirm() más de los que la gente
+// aprende a descartar sin leer.
+let accionPendiente=null;
+function programarAccion(mensaje, ejecutar){
+  if(accionPendiente){ clearTimeout(accionPendiente.timeoutId); accionPendiente.ejecutar(); }
+  document.getElementById('undoMsg').textContent=mensaje;
+  document.getElementById('undoBanner').classList.add('show');
+  const timeoutId=setTimeout(()=>{
+    document.getElementById('undoBanner').classList.remove('show');
+    const a=accionPendiente; accionPendiente=null;
+    if(a) a.ejecutar();
+  }, 4000);
+  accionPendiente={timeoutId, ejecutar};
+}
+function deshacerAccion(){
+  if(!accionPendiente) return;
+  clearTimeout(accionPendiente.timeoutId);
+  accionPendiente=null;
+  document.getElementById('undoBanner').classList.remove('show');
+  toast('Acción cancelada','success');
 }
 
-async function confirmarRechazar(){
-  const idxAnterior=facturas.findIndex(f=>f.id===facturaActual.id);
-  const r=await fetch(`/api/facturas/${facturaActual.id}/rechazar`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nota_revisor:document.getElementById('inputNotaRechazar').value})});
-  const d=await r.json();
+function confirmarAprobar(){
+  const facturaId=facturaActual.id;
+  const numero=facturaActual.factura_numero||facturaId;
+  const idxAnterior=facturas.findIndex(f=>f.id===facturaId);
+  const hotel_nombre_editado=document.getElementById('inputHotel').value;
+  const dw_fpago_editado=document.getElementById('inputFpago').value;
+  const nota_revisor=document.getElementById('inputNotaAprobar').value;
+  closeModal('modalAprobar');
+  programarAccion(`Aprobando factura ${numero}…`, async ()=>{
+    const r=await fetch(`/api/facturas/${facturaId}/aprobar`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hotel_nombre_editado,dw_fpago_editado,nota_revisor})});
+    const d=await r.json();
+    if(r.ok){toast('✓ '+(d.mensaje||'Factura aprobada'),'success');await cargarFacturas();avanzarSiguiente(idxAnterior);}
+    else toast('Error: '+d.error,'error');
+  });
+}
+
+function confirmarRechazar(){
+  const nota_revisor=document.getElementById('inputNotaRechazar').value.trim();
+  if(!nota_revisor){toast('El motivo del rechazo es obligatorio','error');return;}
+  const facturaId=facturaActual.id;
+  const numero=facturaActual.factura_numero||facturaId;
+  const idxAnterior=facturas.findIndex(f=>f.id===facturaId);
   closeModal('modalRechazar');
-  if(r.ok){toast('Factura rechazada','success');await cargarFacturas();avanzarSiguiente(idxAnterior);}
-  else toast('Error: '+d.error,'error');
+  programarAccion(`Rechazando factura ${numero}…`, async ()=>{
+    const r=await fetch(`/api/facturas/${facturaId}/rechazar`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nota_revisor})});
+    const d=await r.json();
+    if(r.ok){toast('Factura rechazada','success');await cargarFacturas();avanzarSiguiente(idxAnterior);}
+    else toast('Error: '+d.error,'error');
+  });
 }
 
 async function openAdmin(){await cargarUsuarios();document.getElementById('modalAdmin').classList.add('open');}

@@ -7,8 +7,8 @@
 <script>(function(){try{var t=localStorage.getItem('theme');if(!t)t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  :root{color-scheme:light;--bg:#f3f4f7;--surface:#ffffff;--border:#e0e3ea;--text:#1c2029;--text2:#5b6472;--text3:#8b93a3;--accent:#4f46e5;--accent2:#4338ca;--red:#dc2626;--error-bg:#fdeaea;--error-border:#f3b9b9;--error-fg:#a3231f;--shadow:0 24px 64px rgba(15,17,25,.12)}
-  :root[data-theme="dark"]{color-scheme:dark;--bg:#0f1117;--surface:#1a1d27;--border:#2a2d3e;--text:#f9fafb;--text2:#9ca3af;--text3:#6b7280;--accent:#6366f1;--accent2:#5558e3;--red:#ef4444;--error-bg:#3b1a1a;--error-border:#7f1d1d;--error-fg:#fca5a5;--shadow:0 24px 64px rgba(0,0,0,.4)}
+  :root{color-scheme:light;--bg:#f3f4f7;--surface:#ffffff;--border:#e0e3ea;--text:#1c2029;--text2:#5b6472;--text3:#6b7280;--accent:#4f46e5;--accent2:#4338ca;--red:#dc2626;--error-bg:#fdeaea;--error-border:#f3b9b9;--error-fg:#a3231f;--shadow:0 24px 64px rgba(15,17,25,.12)}
+  :root[data-theme="dark"]{color-scheme:dark;--bg:#0f1117;--surface:#1a1d27;--border:#2a2d3e;--text:#f9fafb;--text2:#9ca3af;--text3:#8792a6;--accent:#6366f1;--accent2:#5558e3;--red:#ef4444;--error-bg:#3b1a1a;--error-border:#7f1d1d;--error-fg:#fca5a5;--shadow:0 24px 64px rgba(0,0,0,.4)}
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;background:var(--bg);min-height:100vh;display:flex;align-items:center;justify-content:center;transition:background .15s}
   .btn-theme{position:absolute;top:20px;right:20px;width:auto;background:none;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px;margin-top:0}
   .btn-theme:hover{color:var(--text);background:var(--surface)}
@@ -25,13 +25,13 @@
 </style>
 </head>
 <body>
-<button class="btn-theme" id="btnTheme" onclick="toggleTheme()" title="Cambiar tema">🌙</button>
+<button class="btn-theme" id="btnTheme" onclick="toggleTheme()" title="Cambiar tema" aria-label="Cambiar tema claro/oscuro">🌙</button>
 <div class="card">
   <p class="logo">Alda Hotels</p>
   <h1>Portal de Facturas</h1>
-  <label>Usuario</label>
+  <label for="username">Usuario</label>
   <input type="text" id="username" autocomplete="username" autofocus>
-  <label>Contraseña</label>
+  <label for="password">Contraseña</label>
   <input type="password" id="password" autocomplete="current-password">
   <button id="btn" onclick="login()">Acceder</button>
   <div class="error" id="err"></div>

@@ -10,7 +10,7 @@
 :root{
   color-scheme:light;
   --bg:#f3f4f7;--surface:#ffffff;--surface2:#eef0f4;--surface3:#e4e7ee;--border:#e0e3ea;
-  --text:#1c2029;--text2:#5b6472;--text3:#8b93a3;
+  --text:#1c2029;--text2:#5b6472;--text3:#6b7280;
   --accent:#4f46e5;--accent2:#4338ca;
   --green:#0f9d58;--red:#dc2626;--yellow:#b45309;
   --badge-pendiente-bg:#fef3e2;--badge-pendiente-fg:#9a5b13;
@@ -24,7 +24,7 @@
 :root[data-theme="dark"]{
   color-scheme:dark;
   --bg:#0f1117;--surface:#1a1d27;--surface2:#21253a;--surface3:#282c40;--border:#2a2d3e;
-  --text:#f9fafb;--text2:#9ca3af;--text3:#6b7280;
+  --text:#f9fafb;--text2:#9ca3af;--text3:#8792a6;
   --accent:#6366f1;--accent2:#818cf8;
   --green:#10b981;--red:#ef4444;--yellow:#f59e0b;
   --badge-pendiente-bg:#451a03;--badge-pendiente-fg:#fed7aa;
@@ -100,6 +100,8 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
 .link-newtab{font-size:11px;color:var(--accent);text-decoration:none;align-self:flex-end;margin-bottom:6px}
 .link-newtab:hover{text-decoration:underline}
 .fi-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px;display:inline-block}
+.mini-tag{font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:5px;background:var(--error-grave-bg);color:var(--error-grave-fg)}
+.mini-tag.info{background:var(--error-leve-bg);color:var(--error-leve-fg)}
 .badge-pendiente{background:var(--badge-pendiente-bg);color:var(--badge-pendiente-fg)}
 .badge-aprobada{background:var(--badge-aprobada-bg);color:var(--badge-aprobada-fg)}
 .badge-rechazada{background:var(--badge-rechazada-bg);color:var(--badge-rechazada-fg)}
@@ -119,34 +121,34 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
   </div>
   <div class="header-right">
     <button class="btn-icon" onclick="window.location.href='__BASE_PATH__/'" title="Volver a revisión">← Revisión</button>
-    <button class="btn-icon" id="btnTheme" onclick="toggleTheme()" title="Cambiar tema">🌙</button>
+    <button class="btn-icon" id="btnTheme" onclick="toggleTheme()" title="Cambiar tema" aria-label="Cambiar tema claro/oscuro">🌙</button>
     <button class="btn-icon" onclick="logout()">Salir</button>
   </div>
 </header>
 
 <main>
   <div class="toolbar">
-    <select id="selEstado" onchange="onFiltroChange()">
+    <select id="selEstado" onchange="onFiltroChange()" aria-label="Filtrar por estado">
       <option value="all">Todas</option>
       <option value="pendiente">Pendientes</option>
       <option value="aprobada">Aprobadas</option>
       <option value="rechazada">Rechazadas</option>
     </select>
-    <select id="selHotel" onchange="onFiltroChange()">
+    <select id="selHotel" onchange="onFiltroChange()" aria-label="Filtrar por hotel">
       <option value="">Todos los hoteles</option>
     </select>
-    <select id="selSociedad" onchange="onFiltroChange()">
+    <select id="selSociedad" onchange="onFiltroChange()" aria-label="Filtrar por sociedad">
       <option value="">Todas las sociedades</option>
     </select>
     <div class="search-wrap">
-      <input type="search" id="inputBuscar" placeholder="Buscar por proveedor, nº factura, hotel..." oninput="onBuscarInput()">
+      <input type="search" id="inputBuscar" placeholder="Buscar por proveedor, nº factura, hotel..." oninput="onBuscarInput()" aria-label="Buscar facturas">
     </div>
     <div class="fecha-row">
       <span>Del</span>
-      <input type="date" id="inputDesde" onchange="onFiltroChange()">
+      <input type="date" id="inputDesde" onchange="onFiltroChange()" aria-label="Fecha desde">
       <span>al</span>
-      <input type="date" id="inputHasta" onchange="onFiltroChange()">
-      <button class="btn-clear-fecha" id="btnClearFecha" onclick="limpiarFechas()" style="display:none" title="Quitar filtro de fechas">✕</button>
+      <input type="date" id="inputHasta" onchange="onFiltroChange()" aria-label="Fecha hasta">
+      <button class="btn-clear-fecha" id="btnClearFecha" onclick="limpiarFechas()" style="display:none" title="Quitar filtro de fechas" aria-label="Quitar filtro de fechas">✕</button>
     </div>
     <div class="toolbar-spacer"></div>
     <span class="toolbar-info" id="toolbarInfo"></span>
@@ -260,10 +262,10 @@ function renderTabla(){
     const fila=`
     <tr class="fila${abierto?' expanded':''}" onclick="toggleExpand(${f.id})" title="Ver detalle">
       <td><span class="chevron">${abierto?'▾':'▸'}</span>${fmtFecha(f.factura_fecha)}</td>
-      <td>${esc(f.factura_numero)||'—'}</td>
+      <td>${esc(f.factura_numero)||'—'}${f.posible_duplicado?'<span class="mini-tag" title="Otra factura comparte número y proveedor">Duplicada</span>':''}</td>
       <td>${esc(f.proveedor_nombre)||'—'}</td>
-      <td>${esc(f.hotel_nombre_editado||f.hotel_nombre_odoo)||'—'}</td>
-      <td class="num">${fmtImporte(f.importe_total)}</td>
+      <td>${esc(f.hotel_nombre_editado||f.hotel_nombre_odoo)||'—'}${(!f.hotel_nombre_editado&&(!f.hotel_nombre_odoo||f.hotel_nombre_odoo==='No identificado'))?'<span class="mini-tag">Sin hotel</span>':''}</td>
+      <td class="num">${fmtImporte(f.importe_total)}${f.importe_total!=null&&f.importe_total<0?'<span class="mini-tag info">Abono</span>':''}</td>
       <td><span class="fi-badge badge-${f.estado}">${f.estado}</span></td>
       <td>${esc(f.revisor_nombre)||'—'}</td>
     </tr>`;

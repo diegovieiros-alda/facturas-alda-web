@@ -96,7 +96,7 @@ const queries = {
       created_at: 'f.created_at', factura_fecha: 'f.factura_fecha', importe_total: 'f.importe_total',
       proveedor_nombre: 'f.proveedor_nombre', estado: 'f.estado', factura_numero: 'f.factura_numero',
     },
-    all: async ({ estado, q, desde, hasta, hotel, sociedad, sort, dir, limit = 50, offset = 0 } = {}) => {
+    all: async ({ estado, q, desde, hasta, hotel, sociedad, importeMin, importeMax, sort, dir, limit = 50, offset = 0 } = {}) => {
       const where = [];
       const params = [];
       if (estado && estado !== 'all') { params.push(estado); where.push(`f.estado = $${params.length}`); }
@@ -111,13 +111,22 @@ const queries = {
       if (hasta) { params.push(hasta); where.push(`f.factura_fecha <= $${params.length}`); }
       if (hotel) { params.push(hotel); where.push(`coalesce(f.hotel_nombre_editado, f.hotel_nombre_odoo) = $${params.length}`); }
       if (sociedad) { params.push(sociedad); where.push(`f.sociedad = $${params.length}`); }
+      if (importeMin != null && importeMin !== '') { params.push(importeMin); where.push(`f.importe_total >= $${params.length}`); }
+      if (importeMax != null && importeMax !== '') { params.push(importeMax); where.push(`f.importe_total <= $${params.length}`); }
       const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
       const sortCol = queries.getFacturas.SORT_COLS[sort] || 'f.created_at';
       const sortDir = dir === 'asc' ? 'ASC' : 'DESC';
       params.push(limit, offset);
       const { rows } = await pool.query(
         `SELECT f.*, u.nombre AS revisor_nombre, count(*) OVER() AS full_count,
-                coalesce(sum(f.importe_total) OVER(), 0) AS full_sum
+                coalesce(sum(f.importe_total) OVER(), 0) AS full_sum,
+                exists(
+                  SELECT 1 FROM facturas d
+                  WHERE d.id <> f.id
+                    AND lower(trim(d.factura_numero)) = lower(trim(f.factura_numero))
+                    AND lower(trim(d.proveedor_nombre)) = lower(trim(f.proveedor_nombre))
+                    AND f.factura_numero IS NOT NULL AND f.proveedor_nombre IS NOT NULL
+                ) AS posible_duplicado
          FROM facturas f LEFT JOIN usuarios u ON f.revisado_por = u.id
          ${whereSql}
          ORDER BY ${sortCol} ${sortDir} NULLS LAST, f.id ${sortDir}
@@ -221,6 +230,19 @@ const queries = {
       'INSERT INTO log_acciones (factura_id, usuario_id, accion, detalle) VALUES ($1,$2,$3,$4)',
       [fid, uid, accion, detalle]
     ),
+  },
+  getLogFactura: {
+    // Historial de auditoría (quién/cuándo/qué) para mostrar directo en el detalle,
+    // no solo saber que existe en la tabla log_acciones sin que nadie lo vea nunca.
+    all: async (facturaId) => {
+      const { rows } = await pool.query(
+        `SELECT l.accion, l.detalle, l.created_at, u.nombre AS usuario_nombre
+         FROM log_acciones l LEFT JOIN usuarios u ON l.usuario_id = u.id
+         WHERE l.factura_id = $1 ORDER BY l.created_at DESC`,
+        [facturaId]
+      );
+      return rows;
+    },
   },
 
   getStats: {
