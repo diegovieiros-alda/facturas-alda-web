@@ -73,6 +73,7 @@ const FACTURA_COLS = [
   'codigo_hotel', 'dw_hotel', 'dw_fpago', 'sociedad', 'es_costes_generales', 'email_remitente',
   'asunto_email', 'detected_pdf_name', 'errores_graves', 'errores_leves', 'motivo_revision',
   'pdf_filename', 'n8n_webhook_url', 'solo_enlace', 'enlace_descarga', 'enlaces_detectados',
+  'requiere_acceso_portal',
 ];
 
 const queries = {
@@ -95,7 +96,7 @@ const queries = {
       created_at: 'f.created_at', factura_fecha: 'f.factura_fecha', importe_total: 'f.importe_total',
       proveedor_nombre: 'f.proveedor_nombre', estado: 'f.estado', factura_numero: 'f.factura_numero',
     },
-    all: async ({ estado, q, desde, hasta, sort, dir, limit = 50, offset = 0 } = {}) => {
+    all: async ({ estado, q, desde, hasta, hotel, sociedad, sort, dir, limit = 50, offset = 0 } = {}) => {
       const where = [];
       const params = [];
       if (estado && estado !== 'all') { params.push(estado); where.push(`f.estado = $${params.length}`); }
@@ -108,6 +109,8 @@ const queries = {
       // lexicográfica coincide con la cronológica sin necesidad de castear a date.
       if (desde) { params.push(desde); where.push(`f.factura_fecha >= $${params.length}`); }
       if (hasta) { params.push(hasta); where.push(`f.factura_fecha <= $${params.length}`); }
+      if (hotel) { params.push(hotel); where.push(`coalesce(f.hotel_nombre_editado, f.hotel_nombre_odoo) = $${params.length}`); }
+      if (sociedad) { params.push(sociedad); where.push(`f.sociedad = $${params.length}`); }
       const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
       const sortCol = queries.getFacturas.SORT_COLS[sort] || 'f.created_at';
       const sortDir = dir === 'asc' ? 'ASC' : 'DESC';
@@ -124,6 +127,18 @@ const queries = {
       const total = rows[0] ? Number(rows[0].full_count) : 0;
       const totalImporte = rows[0] ? Number(rows[0].full_sum) : 0;
       return { items: rows.map(({ full_count, full_sum, ...f }) => f), total, totalImporte };
+    },
+  },
+
+  // Valores realmente usados en la tabla (no el catálogo completo de HOTELES del
+  // frontend) — para poblar el filtro del histórico con lo que existe de verdad.
+  getFiltros: {
+    get: async () => {
+      const [hoteles, sociedades] = await Promise.all([
+        pool.query(`SELECT DISTINCT coalesce(hotel_nombre_editado, hotel_nombre_odoo) AS h FROM facturas WHERE coalesce(hotel_nombre_editado, hotel_nombre_odoo) IS NOT NULL ORDER BY 1`),
+        pool.query(`SELECT DISTINCT sociedad FROM facturas WHERE sociedad IS NOT NULL ORDER BY 1`),
+      ]);
+      return { hoteles: hoteles.rows.map(r => r.h), sociedades: sociedades.rows.map(r => r.sociedad) };
     },
   },
 

@@ -150,6 +150,7 @@ app.post('/api/webhook/factura', requirePortalToken, async (req, res) => {
       solo_enlace:        data.solo_enlace ? 1 : 0,
       enlace_descarga:    data.enlace_descarga || null,
       enlaces_detectados: JSON.stringify(data.enlaces_detectados || []),
+      requiere_acceso_portal: data.requiere_acceso_portal ? 1 : 0,
     });
 
     res.json({ ok: true, token, posible_duplicado: !!duplicado });
@@ -180,10 +181,13 @@ app.get('/api/facturas', requireAuth, async (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 1000);
   const { items, total, totalImporte } = await queries.getFacturas.all({
     estado: req.query.estado, q: req.query.q, desde: req.query.desde, hasta: req.query.hasta,
-    sort: req.query.sort, dir: req.query.dir, offset, limit,
+    hotel: req.query.hotel, sociedad: req.query.sociedad, sort: req.query.sort, dir: req.query.dir, offset, limit,
   });
   res.json({ items: items.map(parseFactura), total, totalImporte });
 });
+
+// Nota: debe ir antes de /api/facturas/:id, si no "filtros" matchea como :id.
+app.get('/api/facturas/filtros', requireAuth, async (req, res) => res.json(await queries.getFiltros.get()));
 
 app.get('/api/facturas/:id', requireAuth, async (req, res) => {
   const f = await queries.getById.get(Number(req.params.id));

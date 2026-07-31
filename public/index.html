@@ -102,14 +102,23 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .empty-state-icon{font-size:32px;opacity:.35}
 .spinner{width:22px;height:22px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--accent2);animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.detail{flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:20px;animation:fadein .18s ease}
+.detail{flex:1;display:flex;flex-direction:column;overflow:hidden}
 @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 .detail-empty{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--text3)}
 .detail-empty-icon{font-size:48px;opacity:.25}
-.detail-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.detail-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-shrink:0}
 .detail-numero{font-size:21px;font-weight:700;letter-spacing:-.2px}
 .detail-proveedor{font-size:14px;color:var(--text2);margin-top:3px}
 .detail-actions{display:flex;gap:8px;flex-shrink:0}
+.detail-body{flex:1;display:flex;overflow:hidden;animation:fadein .18s ease}
+.detail-col-datos{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.detail-col-pdf{width:44%;min-width:340px;flex-shrink:0;border-left:1px solid var(--border);overflow-y:auto;padding:20px 24px;background:var(--surface)}
+@media (max-width: 900px){
+  .layout{flex-direction:column;height:auto;overflow:visible}
+  .sidebar{width:100%;max-height:45vh;border-right:none;border-bottom:1px solid var(--border)}
+  .detail-body{flex-direction:column}
+  .detail-col-pdf{width:100%;border-left:none;border-top:1px solid var(--border)}
+}
 .btn{padding:9px 18px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
 .btn-primary{background:var(--green);color:#fff;box-shadow:var(--shadow-sm)}
 .btn-primary:hover{background:var(--green-dark);transform:translateY(-1px);box-shadow:var(--shadow-md)}
@@ -118,6 +127,8 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
 .btn-secondary:hover{border-color:var(--text3);background:var(--surface3)}
 .btn:disabled{opacity:.5;cursor:not-allowed;transform:none!important;box-shadow:none!important}
+.btn-copy{background:none;border:none;cursor:pointer;font-size:11px;opacity:.55;padding:0 0 0 4px;vertical-align:middle}
+.btn-copy:hover{opacity:1}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;transition:border-color .15s;box-shadow:var(--shadow-sm)}
 .card-header{padding:12px 16px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;display:flex;align-items:center;gap:6px}
 .card-body{padding:16px}
@@ -125,6 +136,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .dato-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
 .dato-valor{font-size:13px;font-weight:500}
 .dato-valor.importe{font-size:19px;font-weight:700;color:var(--green);letter-spacing:-.3px}
+.dato-alerta{background:var(--motivo-bg);border:1px solid var(--motivo-border);border-radius:6px;padding:8px}
 .errores{display:flex;flex-direction:column;gap:6px}
 .error-item{display:flex;align-items:flex-start;gap:8px;padding:9px 12px;border-radius:6px;font-size:12px;line-height:1.4}
 .error-grave{background:var(--error-grave-bg);border-left:3px solid var(--red);color:var(--error-grave-fg)}
@@ -132,8 +144,8 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .input-hotel,.input-nota{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;padding:10px 12px;outline:none;transition:border-color .15s;font-family:inherit}
 .input-nota{resize:vertical;min-height:70px;font-size:13px}
 .input-hotel:focus,.input-nota:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(99,102,241,.15)}
-.pdf-frame{width:100%;height:600px;border:none;background:var(--pdf-bg);border-radius:0 0 10px 10px}
-.pdf-unavail{height:200px;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:13px;flex-direction:column;gap:8px}
+.pdf-frame{width:100%;height:calc(100vh - 200px);min-height:400px;border:none;background:var(--pdf-bg);border-radius:8px}
+.pdf-unavail{padding:20px;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:13px;flex-direction:column;gap:8px;text-align:center}
 .modal-overlay{display:none;position:fixed;inset:0;background:var(--modal-overlay);backdrop-filter:blur(3px);z-index:200;align-items:center;justify-content:center;animation:fadein .15s ease}
 .modal-overlay.open{display:flex}
 .modal{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:440px;max-width:90vw;box-shadow:var(--shadow-md)}
@@ -151,6 +163,8 @@ select option{background:var(--surface);color:var(--text)}
 .admin-user-name{flex:1;font-size:13px}
 .admin-user-rol{font-size:11px;color:var(--text3);background:var(--surface2);padding:2px 8px;border-radius:10px}
 .btn-sm{padding:4px 10px;font-size:11px;border-radius:6px}
+.kbd-hint{font-size:10px;color:var(--text3);margin-left:auto;white-space:nowrap}
+.kbd-hint kbd{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-family:inherit}
 </style>
 </head>
 <body>
@@ -267,6 +281,10 @@ select option{background:var(--surface);color:var(--text)}
 // evita que el revisor tenga que escribir a mano el "código. Nombre" exacto
 const HOTELES={"012":"Coste General Consultores Hoteleros Integrales S.L","100":"Coste General Alda Compostela S.L","101":"Alda O Fogar de Teodomiro","102":"Alda Casco Antiguo","103":"Alda Centro León","106":"Hotel Alda Algalia","107":"Alda Barrio Húmedo","108":"Lucus","109":"Alda San Carlos","110":"Alda Pilgrim León","111":"Alda Catedral","112":"Alda Avenida","113":"Alda Vía León","114":"Alda Bonaval","115":"Alda San Bieito","116":"Alda Camiño Inglés","117":"Alda Vía de la Plata Rooms","118":"Alda Fogar Natural","119":"Alda Pilgrim Astorga","200":"Coste General Alda Castilla S.L","201":"Alda Entrearcos","202":"Alda Centro Palencia","203":"Alda Fogar Natural","204":"Alda Cardeña","205":"Alda Palencia Plaza","206":"Alda Centro Ponferrada","207":"Alda Ciudad de Soria","208":"Alda Estella","209":"Alda Río Duero","210":"Alda Centro Zaragoza","211":"Alda Jolio Jaca","213":"Alda Pilgrim Ponferrada","214":"Alda Centro Pamplona","215":"Alda Zaragoza Independencia","216":"Alda Mercado de Zamora","217":"Alda Río Tormes","218":"Alda Ciudad de Toro","219":"Alda Castillo de Olite","220":"Alda Malvasía","221":"Alda Route 42","222":"Alda Mirador del Moncayo","223":"Alda Puerto Seco","224":"Alda Valladolid Sur","225":"Zeta Students Burgos","226":"Alda Centro Zamora","227":"Alda Soria Rooms","228":"Apartamentos Alda Palencia Catedral","229":"Alda Peñafiel","230":"Alda Posada de Egues","231":"Alda Triskel","232":"Alda Nueva Castilla","233":"Alda El Espinar","234":"Alda Guijuelo","235":"Alda A Boira","236":"Alda Plaza Mayor Toro","237":"Alda Ruta Castilla","238":"Alda Ciudad de Corella","300":"Coste General Alda Rias Baixas S.L","301":"Alda Bueumar","302":"Alda Estación Vigo","303":"Alda Puerta del Sol","304":"Alda Porta do Sol","305":"Alda Estación Pontevedra","306":"Alda Estación Ourense","307":"Alda Santa Tecla","308":"Alda Vía Norte","309":"Alda Lalín","310":"Alda Palas de Rei","312":"Alda Centro Pontevedra","313":"Alda Carril","314":"Alda Castelao","315":"Alda Boiro","316":"Alda Barraña Playa","317":"Apartamentos Alda O Grove","318":"Alda Alpina","319":"Alda Ribeira","320":"Alda Xinzo","321":"Alda Altiana","400":"Coste General Hoteles Rias Altas S.L","401":"Alda Puerta Coruña","402":"Alda Santa Cristina","403":"Alda Sada Marina","404":"Apartamentos Alda Santa Cristina","405":"Alda El Suizo","406":"Hotel Agüera","407":"Alda Palacio Valdés","408":"Alda Galería Coruña","409":"Alda Pasaje","410":"Alda Centro Oviedo","411":"Alda Estación Oviedo","412":"Alda Miramar","413":"Alda Orzán","414":"Alda Alborán Rooms","415":"Alda Don Carlos","416":"Hotel Coruñamar","417":"Alda Puerto Calderón","418":"Alda Cabanas Playa","419":"Alda Fogar do Mariñeiro","420":"Alda Triacastela","421":"Alda Cabanas Nature","422":"Alda Narón","423":"Alda Carballo","424":"Alda Corcubión","425":"Alda Arteixo","500":"Coste General Alda Hostels Hostelería S.L","501":"Garfo Sta. Trega","502":"Garfo Puerto Seco","503":"Garfo Cocina Central","504":"Coffe Bakers Orzán","505":"Garfo Sada","506":"Garfo Carril","507":"Garfo Cabanas","600":"Coste general Obedientrophy Unipessoal Lda","601":"Valença do Minho","700":"Coste general Alda Hotels Bavaro","701":"Alda Bavaro","800":"Coste general Restauradores de Comida Atlántica S.L","801":"Taberna Central","802":"A Nosa Taberna Corrubedo","803":"A Nosa Taberna Coruña","804":"A Nosa Taberna Compostela","805":"A Nosa Taberna Carril","806":"Alda Corrubedo","807":"A Nosa Taberna Palas de Rei","900":"Costes Generales Niuco Homes S.L","901":"IH Ciudad de Valladolid","902":"IH Ciudad del Cine","903":"IH Ciudad de Avilés","904":"IH Felipe Prieto","905":"IH Fogar Natural","906":"IH Santa Crisitina","907":"IH Porta do Sol","908":"IH Palencia Catedral"};
 
+// motivo_revision cuyo problema es la identificación del hotel — resalta el campo
+// "DocuWare hotel" en vez de dejar el aviso solo como párrafo suelto arriba.
+const MOTIVOS_HOTEL = ['factura_dirigida_a_sociedad', 'multiples_centros', 'costes_generales_posible_hotel'];
+
 let facturas=[], facturaActual=null, filtroActual='pendiente', me=null;
 let offset=0, total=0, busqueda='', buscarTimer=null, desde='', hasta='';
 const PAGE=50;
@@ -295,6 +313,11 @@ document.addEventListener('DOMContentLoaded',()=>{
 // meterlo en innerHTML — sin esto, un proveedor podía inyectar JS vía el nombre,
 // concepto, asunto, etc. y ejecutarlo en la sesión de un admin autenticado.
 function esc(s){return s==null?'':String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+function copiar(texto){
+  if(!texto) return;
+  navigator.clipboard.writeText(texto).then(()=>toast('Copiado al portapapeles','success')).catch(()=>toast('No se pudo copiar','error'));
+}
 
 async function init(){
   me=await fetch('/api/me').then(r=>r.json());
@@ -396,46 +419,51 @@ function renderDetail(f){
   const el=Array.isArray(f.errores_leves)?f.errores_leves:[];
   const motivoMap={'factura_dirigida_a_sociedad':'📋 Factura dirigida a sociedad — requiere imputación manual','multiples_centros':'🏨 Múltiples centros detectados','costes_generales_posible_hotel':'🔍 Posible hotel no identificado correctamente'};
   const motivoTxt=motivoMap[f.motivo_revision]||'';
+  const alertaHotel=MOTIVOS_HOTEL.includes(f.motivo_revision);
   document.getElementById('detail').innerHTML=`
     <div class="detail-header">
       <div>
-        <div class="detail-numero">${esc(f.factura_numero)||'Sin número'}${f.estado!=='pendiente'?` <span class="fi-badge badge-${f.estado}" style="font-size:12px;margin-left:8px">${f.estado}</span>`:''}</div>
-        <div class="detail-proveedor">${esc(f.proveedor_nombre)||'—'}${f.proveedor_cif?' · '+esc(f.proveedor_cif):''}</div>
+        <div class="detail-numero">${esc(f.factura_numero)||'Sin número'}${f.factura_numero?`<button class="btn-copy" data-copy="${esc(f.factura_numero)}" onclick="copiar(this.dataset.copy)" title="Copiar número">📋</button>`:''}${f.estado!=='pendiente'?` <span class="fi-badge badge-${f.estado}" style="font-size:12px;margin-left:8px">${f.estado}</span>`:''}</div>
+        <div class="detail-proveedor">${esc(f.proveedor_nombre)||'—'}${f.proveedor_cif?` · ${esc(f.proveedor_cif)}<button class="btn-copy" data-copy="${esc(f.proveedor_cif)}" onclick="copiar(this.dataset.copy)" title="Copiar CIF">📋</button>`:''}</div>
       </div>
-      ${isPendiente?`<div class="detail-actions"><button class="btn btn-danger" onclick="openRechazar()">✗ Rechazar</button><button class="btn btn-primary" onclick="openAprobar()">✓ Aprobar</button></div>`:`<div style="font-size:12px;color:var(--text3)">Revisada por ${esc(f.revisor_nombre)||'—'}<br>${fmtDate(f.revisado_at)}</div>`}
+      ${isPendiente?`<div class="detail-actions"><button class="btn btn-danger" onclick="openRechazar()">✗ Rechazar <span style="opacity:.6">(R)</span></button><button class="btn btn-primary" onclick="openAprobar()">✓ Aprobar <span style="opacity:.6">(A)</span></button></div>`:`<div style="font-size:12px;color:var(--text3)">Revisada por ${esc(f.revisor_nombre)||'—'}<br>${fmtDate(f.revisado_at)}</div>`}
     </div>
-    ${motivoTxt?`<div style="background:var(--motivo-bg);border:1px solid var(--motivo-border);border-radius:8px;padding:12px 16px;font-size:13px;color:var(--motivo-fg)">${motivoTxt}</div>`:''}
-    ${eg.length||el.length?`<div class="card"><div class="card-header">Incidencias detectadas</div><div class="card-body"><div class="errores">${eg.map(e=>`<div class="error-item error-grave">🔴 ${esc(e)}</div>`).join('')}${el.map(e=>`<div class="error-item error-leve">🟡 ${esc(e)}</div>`).join('')}</div></div></div>`:''}
-    <div class="card"><div class="card-header">Datos de la factura</div><div class="card-body">
-      <div class="datos-grid">
-        <div><div class="dato-label">Nº Factura</div><div class="dato-valor">${esc(f.factura_numero)||'—'}</div></div>
-        <div><div class="dato-label">Fecha</div><div class="dato-valor">${fmtFecha(f.factura_fecha)}</div></div>
-        <div><div class="dato-label">Importe total</div><div class="dato-valor importe">${f.importe_total?Number(f.importe_total).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</div></div>
-        <div><div class="dato-label">Base imponible</div><div class="dato-valor">${f.base_imponible?Number(f.base_imponible).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</div></div>
-        <div><div class="dato-label">Forma de pago</div><div class="dato-valor">${esc(f.forma_pago_detalle)||'—'}</div></div>
-        <div><div class="dato-label">Recibida</div><div class="dato-valor">${fmtDate(f.created_at)}</div></div>
+    <div class="detail-body">
+      <div class="detail-col-datos">
+        ${motivoTxt?`<div style="background:var(--motivo-bg);border:1px solid var(--motivo-border);border-radius:8px;padding:12px 16px;font-size:13px;color:var(--motivo-fg)">${motivoTxt}</div>`:''}
+        ${eg.length||el.length?`<div class="card"><div class="card-header">Incidencias detectadas</div><div class="card-body"><div class="errores">${eg.map(e=>`<div class="error-item error-grave">🔴 ${esc(e)}</div>`).join('')}${el.map(e=>`<div class="error-item error-leve">🟡 ${esc(e)}</div>`).join('')}</div></div></div>`:''}
+        <div class="card"><div class="card-header">Datos de la factura</div><div class="card-body">
+          <div class="datos-grid">
+            <div><div class="dato-label">Nº Factura</div><div class="dato-valor">${esc(f.factura_numero)||'—'}</div></div>
+            <div><div class="dato-label">Fecha</div><div class="dato-valor">${fmtFecha(f.factura_fecha)}</div></div>
+            <div><div class="dato-label">Importe total</div><div class="dato-valor importe">${f.importe_total?Number(f.importe_total).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</div></div>
+            <div><div class="dato-label">Base imponible</div><div class="dato-valor">${f.base_imponible?Number(f.base_imponible).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</div></div>
+            <div><div class="dato-label">Forma de pago</div><div class="dato-valor">${esc(f.forma_pago_detalle)||'—'}</div></div>
+            <div><div class="dato-label">Recibida</div><div class="dato-valor">${fmtDate(f.created_at)}</div></div>
+          </div>
+          ${f.concepto?`<div style="margin-top:12px"><div class="dato-label">Concepto</div><div class="dato-valor" style="font-size:12px;line-height:1.5;color:var(--text2)">${esc(f.concepto)}</div></div>`:''}
+        </div></div>
+        <div class="card"><div class="card-header">Hotel / DocuWare</div><div class="card-body">
+          <div class="datos-grid">
+            <div><div class="dato-label">Identificado como</div><div class="dato-valor">${esc(f.hotel_nombre_odoo)||'No identificado'}</div></div>
+            <div><div class="dato-label">Código hotel</div><div class="dato-valor">${esc(f.codigo_hotel)||'—'}</div></div>
+            <div><div class="dato-label">Sociedad</div><div class="dato-valor">${esc(f.sociedad)||'—'}</div></div>
+            <div class="${alertaHotel?'dato-alerta':''}"><div class="dato-label">DocuWare hotel</div><div class="dato-valor">${esc(f.hotel_nombre_editado||f.dw_hotel)||'PENDIENTE'}</div></div>
+            <div><div class="dato-label">Forma de pago DW</div><div class="dato-valor">${esc(f.dw_fpago_editado||f.dw_fpago)||'—'}</div></div>
+          </div>
+          ${f.nota_revisor?`<div style="margin-top:12px"><div class="dato-label">Nota del revisor</div><div class="dato-valor" style="font-size:12px;color:var(--text2)">${esc(f.nota_revisor)}</div></div>`:''}
+        </div></div>
+        <div class="card"><div class="card-header">Email de origen</div><div class="card-body">
+          <div class="datos-grid">
+            <div><div class="dato-label">Remitente</div><div class="dato-valor" style="font-size:12px">${esc(f.email_remitente)||'—'}</div></div>
+            <div><div class="dato-label">Archivo</div><div class="dato-valor" style="font-size:12px">${esc(f.detected_pdf_name)||'—'}</div></div>
+          </div>
+          ${f.asunto_email?`<div style="margin-top:8px"><div class="dato-label">Asunto</div><div class="dato-valor" style="font-size:12px;color:var(--text2)">${esc(f.asunto_email)}</div></div>`:''}
+        </div></div>
       </div>
-      ${f.concepto?`<div style="margin-top:12px"><div class="dato-label">Concepto</div><div class="dato-valor" style="font-size:12px;line-height:1.5;color:var(--text2)">${esc(f.concepto)}</div></div>`:''}
-    </div></div>
-    <div class="card"><div class="card-header">Hotel / DocuWare</div><div class="card-body">
-      <div class="datos-grid">
-        <div><div class="dato-label">Identificado como</div><div class="dato-valor">${esc(f.hotel_nombre_odoo)||'No identificado'}</div></div>
-        <div><div class="dato-label">Código hotel</div><div class="dato-valor">${esc(f.codigo_hotel)||'—'}</div></div>
-        <div><div class="dato-label">Sociedad</div><div class="dato-valor">${esc(f.sociedad)||'—'}</div></div>
-        <div><div class="dato-label">DocuWare hotel</div><div class="dato-valor">${esc(f.hotel_nombre_editado||f.dw_hotel)||'PENDIENTE'}</div></div>
-        <div><div class="dato-label">Forma de pago DW</div><div class="dato-valor">${esc(f.dw_fpago_editado||f.dw_fpago)||'—'}</div></div>
+      <div class="detail-col-pdf">
+        ${f.pdf_filename?`<iframe class="pdf-frame" src="__BASE_PATH__/api/facturas/${f.id}/pdf"></iframe>`:renderPdfFaltante(f)}
       </div>
-      ${f.nota_revisor?`<div style="margin-top:12px"><div class="dato-label">Nota del revisor</div><div class="dato-valor" style="font-size:12px;color:var(--text2)">${esc(f.nota_revisor)}</div></div>`:''}
-    </div></div>
-    <div class="card"><div class="card-header">Email de origen</div><div class="card-body">
-      <div class="datos-grid">
-        <div><div class="dato-label">Remitente</div><div class="dato-valor" style="font-size:12px">${esc(f.email_remitente)||'—'}</div></div>
-        <div><div class="dato-label">Archivo</div><div class="dato-valor" style="font-size:12px">${esc(f.detected_pdf_name)||'—'}</div></div>
-      </div>
-      ${f.asunto_email?`<div style="margin-top:8px"><div class="dato-label">Asunto</div><div class="dato-valor" style="font-size:12px;color:var(--text2)">${esc(f.asunto_email)}</div></div>`:''}
-    </div></div>
-    <div class="card"><div class="card-header">Factura PDF</div>
-      ${f.pdf_filename?`<iframe class="pdf-frame" src="__BASE_PATH__/api/facturas/${f.id}/pdf"></iframe>`:renderPdfFaltante(f)}
     </div>`;
 }
 
@@ -444,8 +472,14 @@ function renderPdfFaltante(f){
   // Solo http(s) como href — evita que un enlace "detectado" con esquema javascript: se ejecute al clicar.
   const links=[...new Set(enlaces)].map(u=>/^https?:\/\//i.test(u)?`<a href="${esc(u)}" target="_blank" rel="noopener" style="color:var(--accent);word-break:break-all;font-size:12px;display:block;margin-bottom:4px">${esc(u)}</a>`:`<div style="color:var(--text3);word-break:break-all;font-size:12px;margin-bottom:4px">${esc(u)}</div>`).join('');
   const puedeSubir=f.estado==='pendiente';
-  return `<div class="pdf-unavail" style="height:auto;padding:20px;gap:10px">
-    <div>📄 ${f.solo_enlace?'Esta factura no llegó con PDF adjunto, solo enlace(s) de descarga.':'PDF no disponible.'}</div>
+  // requiere_acceso_portal: el email pedía loguearse en el portal del proveedor, no hay
+  // link de descarga directo — caso distinto de "solo enlace" y hay que aclararlo, si no
+  // el revisor busca un botón de descarga que no existe.
+  const mensaje = f.requiere_acceso_portal
+    ? '⚠️ Esta factura requiere acceder al portal del proveedor para descargarla — no llegó ningún enlace directo, hay que entrar a la web del proveedor manualmente.'
+    : (f.solo_enlace ? 'Esta factura no llegó con PDF adjunto, solo enlace(s) de descarga.' : 'PDF no disponible.');
+  return `<div class="pdf-unavail">
+    <div>📄 ${mensaje}</div>
     ${links?`<div style="width:100%;text-align:left">${links}</div>`:''}
     ${puedeSubir?`<div style="width:100%;text-align:left;margin-top:8px">
       <label class="form-label">Descarga el PDF del enlace y súbelo aquí para poder aprobar</label>
@@ -486,22 +520,36 @@ function openAprobar(){
 function openRechazar(){document.getElementById('inputNotaRechazar').value='';document.getElementById('modalRechazar').classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
+// Tras aprobar/rechazar, si se estaba en la pestaña Pendientes, selecciona sola la
+// siguiente pendiente en vez de dejar el panel vacío — evita el clic extra por cada
+// factura cuando hay varias en cola.
+function avanzarSiguiente(idxAnterior){
+  if(filtroActual==='pendiente' && facturas.length){
+    const next=facturas[idxAnterior]||facturas[idxAnterior-1];
+    if(next){ seleccionar(next.id); return; }
+  }
+  facturaActual=null;
+  document.getElementById('detail').innerHTML='<div class="detail-empty"><div class="detail-empty-icon">✓</div><div>No quedan facturas pendientes</div></div>';
+}
+
 async function confirmarAprobar(){
+  const idxAnterior=facturas.findIndex(f=>f.id===facturaActual.id);
   const btn=document.getElementById('btnConfAprobar');
   btn.disabled=true;btn.textContent='Enviando...';
   const r=await fetch(`/api/facturas/${facturaActual.id}/aprobar`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hotel_nombre_editado:document.getElementById('inputHotel').value,dw_fpago_editado:document.getElementById('inputFpago').value,nota_revisor:document.getElementById('inputNotaAprobar').value})});
   const d=await r.json();
   btn.disabled=false;btn.textContent='Confirmar y enviar a DocuWare';
   closeModal('modalAprobar');
-  if(r.ok){toast('✓ '+(d.mensaje||'Factura aprobada'),'success');facturaActual=null;await cargarFacturas();document.getElementById('detail').innerHTML='<div class="detail-empty"><div class="detail-empty-icon">✓</div><div>Factura procesada</div></div>';}
+  if(r.ok){toast('✓ '+(d.mensaje||'Factura aprobada'),'success');await cargarFacturas();avanzarSiguiente(idxAnterior);}
   else toast('Error: '+d.error,'error');
 }
 
 async function confirmarRechazar(){
+  const idxAnterior=facturas.findIndex(f=>f.id===facturaActual.id);
   const r=await fetch(`/api/facturas/${facturaActual.id}/rechazar`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nota_revisor:document.getElementById('inputNotaRechazar').value})});
   const d=await r.json();
   closeModal('modalRechazar');
-  if(r.ok){toast('Factura rechazada','success');facturaActual=null;await cargarFacturas();document.getElementById('detail').innerHTML='<div class="detail-empty"><div class="detail-empty-icon">✗</div><div>Factura rechazada</div></div>';}
+  if(r.ok){toast('Factura rechazada','success');await cargarFacturas();avanzarSiguiente(idxAnterior);}
   else toast('Error: '+d.error,'error');
 }
 
@@ -524,6 +572,25 @@ function fmtDate(dt){if(!dt)return'—';return new Date(dt).toLocaleString('es-E
 function fmtFecha(f){const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(f||'');return m?`${m[3]}/${m[2]}/${m[1]}`:'—';}
 function toast(msg,type='success'){const el=document.getElementById('toast');el.textContent=msg;el.className=`toast ${type} show`;setTimeout(()=>el.classList.remove('show'),3500);}
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
+
+// Atajos de teclado: A/R aprobar-rechazar, ↑/↓ moverse por la lista actual. Se
+// desactivan mientras se escribe en un campo o hay un modal abierto.
+document.addEventListener('keydown', e => {
+  const tag=(e.target.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea'||tag==='select') return;
+  if(document.querySelector('.modal-overlay.open')) return;
+  if(!facturaActual) return;
+  if((e.key==='a'||e.key==='A') && facturaActual.estado==='pendiente'){ e.preventDefault(); openAprobar(); }
+  else if((e.key==='r'||e.key==='R') && facturaActual.estado==='pendiente'){ e.preventDefault(); openRechazar(); }
+  else if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+    e.preventDefault();
+    const idx=facturas.findIndex(f=>f.id===facturaActual.id);
+    if(idx<0) return;
+    const next = e.key==='ArrowDown' ? facturas[idx+1] : facturas[idx-1];
+    if(next) seleccionar(next.id);
+  }
+});
+
 init();
 </script>
 </body>

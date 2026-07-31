@@ -38,12 +38,15 @@ create table if not exists facturas (
   solo_enlace integer default 0,
   enlace_descarga text,
   enlaces_detectados text default '[]',
+  requiere_acceso_portal integer default 0,
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
   revisado_por integer references usuarios(id),
   revisado_at timestamptz,
   nota_revisor text
 );
+
+alter table facturas add column if not exists requiere_acceso_portal integer default 0;
 
 create index if not exists idx_facturas_estado on facturas(estado);
 create index if not exists idx_facturas_created_at on facturas(created_at desc);

@@ -132,6 +132,12 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
       <option value="aprobada">Aprobadas</option>
       <option value="rechazada">Rechazadas</option>
     </select>
+    <select id="selHotel" onchange="onFiltroChange()">
+      <option value="">Todos los hoteles</option>
+    </select>
+    <select id="selSociedad" onchange="onFiltroChange()">
+      <option value="">Todas las sociedades</option>
+    </select>
     <div class="search-wrap">
       <input type="search" id="inputBuscar" placeholder="Buscar por proveedor, nº factura, hotel..." oninput="onBuscarInput()">
     </div>
@@ -195,12 +201,25 @@ function fmtDateTime(dt){if(!dt)return'—';return new Date(dt).toLocaleString('
 let items=[], offset=0, total=0, busqueda='', desde='', hasta='', sort='factura_fecha', dir='desc', buscarTimer=null, expandedId=null;
 const PAGE=100;
 
+function primerDiaMes(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;}
+function hoyISO(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+
+async function cargarFiltros(){
+  const {hoteles,sociedades}=await fetch('/api/facturas/filtros').then(r=>r.json()).catch(()=>({hoteles:[],sociedades:[]}));
+  document.getElementById('selHotel').insertAdjacentHTML('beforeend', hoteles.map(h=>`<option value="${esc(h)}">${esc(h)}</option>`).join(''));
+  document.getElementById('selSociedad').insertAdjacentHTML('beforeend', sociedades.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join(''));
+}
+
 let reqId=0;
 async function cargar(reset=true){
   if(reset) offset=0;
   const params=new URLSearchParams({offset,limit:PAGE,sort,dir});
   const estado=document.getElementById('selEstado').value;
+  const hotel=document.getElementById('selHotel').value;
+  const sociedad=document.getElementById('selSociedad').value;
   if(estado!=='all') params.set('estado',estado);
+  if(hotel) params.set('hotel',hotel);
+  if(sociedad) params.set('sociedad',sociedad);
   if(busqueda) params.set('q',busqueda);
   if(desde) params.set('desde',desde);
   if(hasta) params.set('hasta',hasta);
@@ -232,7 +251,7 @@ function cargarMas(){offset+=PAGE;cargar(false);}
 function renderTabla(){
   const tbody=document.getElementById('tbody');
   if(!items.length){
-    const filtrando=busqueda||desde||hasta||document.getElementById('selEstado').value!=='all';
+    const filtrando=busqueda||desde||hasta||document.getElementById('selEstado').value!=='all'||document.getElementById('selHotel').value||document.getElementById('selSociedad').value;
     tbody.innerHTML=`<tr><td colspan="7"><div class="empty-state"><div class="empty-state-icon">${filtrando?'⌕':'📄'}</div>${filtrando?'Ningún resultado con estos filtros':'No hay facturas'}</div></td></tr>`;
     return;
   }
@@ -325,7 +344,11 @@ document.querySelectorAll('th[data-sort]').forEach(th=>{
 async function exportarCSV(){
   const params=new URLSearchParams({offset:0,limit:1000,sort,dir});
   const estado=document.getElementById('selEstado').value;
+  const hotel=document.getElementById('selHotel').value;
+  const sociedad=document.getElementById('selSociedad').value;
   if(estado!=='all') params.set('estado',estado);
+  if(hotel) params.set('hotel',hotel);
+  if(sociedad) params.set('sociedad',sociedad);
   if(busqueda) params.set('q',busqueda);
   if(desde) params.set('desde',desde);
   if(hasta) params.set('hasta',hasta);
@@ -343,6 +366,13 @@ async function exportarCSV(){
 
 async function logout(){await fetch('/api/logout',{method:'POST'});window.location.href='__BASE_PATH__/login';}
 
+// Por defecto se muestra el mes en curso — con cientos de facturas acumuladas no
+// tiene sentido traerlas todas de entrada; "Quitar filtro" (✕) muestra el histórico completo.
+desde=primerDiaMes(); hasta=hoyISO();
+document.getElementById('inputDesde').value=desde;
+document.getElementById('inputHasta').value=hasta;
+document.getElementById('btnClearFecha').style.display='';
+cargarFiltros();
 cargar();
 </script>
 </body>
