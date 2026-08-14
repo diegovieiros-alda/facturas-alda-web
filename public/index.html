@@ -390,6 +390,7 @@ function limpiarMensaje(s){
   return s
     .replace(/\[(HOTEL|IA|SOCIEDAD|FECHA|IMPORTE|CIF|EMAIL|DUPLICADO)\]\s*/gi,'')
     .replace(/\bATENCIÓN:\s*/gi,'')
+    .replace(/\([^()]*\+[^()]*\)/g,'')
     .replace(/\(\d{1,3}\)/g,'')
     .replace(/\b\d{2,4}\s+(?=(?:Hotel|Alda|Apartamentos|Hostal|Garfo|Taberna|IH)\b)/g,'')
     .replace(/\b(Hotel)\s+\1\b/gi,'$1')
