@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Log — Facturas Alda Hotels</title>
+<script>(function(){try{var t=localStorage.getItem('theme');if(!t)t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  color-scheme:light;
+  --bg:#f3f4f7;--surface:#ffffff;--surface2:#eef0f4;--surface3:#e4e7ee;--border:#e0e3ea;
+  --text:#1c2029;--text2:#5b6472;--text3:#6b7280;
+  --accent:#4f46e5;--accent2:#4338ca;
+  --green:#0f9d58;--red:#dc2626;--yellow:#b45309;
+  --shadow-sm:0 1px 2px rgba(15,17,25,.06);
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0f1117;--surface:#1a1d27;--surface2:#21253a;--surface3:#282c40;--border:#2a2d3e;
+  --text:#f9fafb;--text2:#9ca3af;--text3:#8792a6;
+  --accent:#6366f1;--accent2:#818cf8;
+  --green:#10b981;--red:#ef4444;--yellow:#f59e0b;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.25);
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:20px;border:2px solid var(--bg)}
+*{scrollbar-width:thin;scrollbar-color:var(--surface2) transparent}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;position:sticky;top:0;z-index:100}
+.header-left{display:flex;align-items:center;gap:16px}
+.logo-mark{width:8px;height:8px;border-radius:2px;background:linear-gradient(135deg,var(--accent),var(--accent2));flex-shrink:0}
+.logo-text{font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+.logo-sep{width:1px;height:20px;background:var(--border)}
+.header-title{font-size:13px;color:var(--text2)}
+.header-right{display:flex;align-items:center;gap:12px}
+.btn-icon{background:none;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px;transition:all .15s}
+.btn-icon:hover{border-color:var(--text3);color:var(--text);background:var(--surface2)}
+main{flex:1;overflow:hidden;display:flex;flex-direction:column;padding:20px 24px;gap:14px}
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.toolbar select,.toolbar input[type=text],.toolbar input[type=search]{padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none}
+.toolbar select:focus,.toolbar input:focus{border-color:var(--accent)}
+.search-wrap{position:relative}
+.search-wrap::before{content:'⌕';position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px;pointer-events:none}
+.search-wrap input{padding-left:28px!important;width:220px}
+.fecha-row{display:flex;align-items:center;gap:6px}
+.fecha-row input[type=date]{padding:7px 8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;outline:none}
+.fecha-row span{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px}
+.btn-clear-fecha{background:none;border:1px solid var(--border);color:var(--text3);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer}
+.btn-clear-fecha:hover{color:var(--text);border-color:var(--text3)}
+.toolbar-spacer{flex:1}
+.toolbar-info{font-size:12px;color:var(--text2);white-space:nowrap}
+.toolbar-info strong{color:var(--text)}
+.btn{padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--text);transition:all .15s}
+.btn:hover{border-color:var(--text3);background:var(--surface3)}
+.table-wrap{flex:1;overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-sm)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{position:sticky;top:0;background:var(--surface2);text-align:left;padding:9px 12px;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:700;cursor:pointer;user-select:none;border-bottom:1px solid var(--border);white-space:nowrap;z-index:1}
+thead th:hover{color:var(--text)}
+thead th.sorted{color:var(--accent)}
+thead th .arrow{font-size:9px;margin-left:3px;opacity:.7}
+thead th.no-sort{cursor:default}
+tbody td{padding:8px 12px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+tbody tr:hover{background:var(--surface2)}
+tbody tr:last-child td{border-bottom:none}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+td.mono{font-family:monospace;font-size:11px}
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 24px;color:var(--text3);font-size:13px;gap:10px}
+.empty-state-icon{font-size:32px;opacity:.35}
+.spinner{width:22px;height:22px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--accent2);animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.footer-bar{display:flex;justify-content:center;padding:14px}
+</style>
+</head>
+<body>
+<header>
+  <div class="header-left">
+    <span class="logo-text"><span class="logo-mark"></span>Alda Hotels</span>
+    <div class="logo-sep"></div>
+    <span class="header-title">Log de procesamiento (n8n)</span>
+  </div>
+  <div class="header-right">
+    <button class="btn-icon" onclick="window.location.href='__BASE_PATH__/historico'" title="Histórico de revisión">📊 Histórico</button>
+    <button class="btn-icon" onclick="window.location.href='__BASE_PATH__/'" title="Volver a revisión">← Revisión</button>
+    <button class="btn-icon" id="btnTheme" onclick="toggleTheme()" title="Cambiar tema" aria-label="Cambiar tema claro/oscuro">🌙</button>
+    <button class="btn-icon" onclick="logout()">Salir</button>
+  </div>
+</header>
+
+<main>
+  <div class="toolbar">
+    <div class="search-wrap">
+      <input type="search" id="inputBuscar" placeholder="Buscar por proveedor, nº factura, hotel..." oninput="onBuscarInput()" aria-label="Buscar en el log">
+    </div>
+    <div class="fecha-row">
+      <span>Del</span>
+      <input type="date" id="inputDesde" onchange="onFiltroChange()" aria-label="Fecha desde">
+      <span>al</span>
+      <input type="date" id="inputHasta" onchange="onFiltroChange()" aria-label="Fecha hasta">
+      <button class="btn-clear-fecha" id="btnClearFecha" onclick="limpiarFechas()" style="display:none" title="Quitar filtro de fechas" aria-label="Quitar filtro de fechas">✕</button>
+    </div>
+    <div class="toolbar-spacer"></div>
+    <span class="toolbar-info" id="toolbarInfo"></span>
+    <button class="btn" onclick="exportarCSV()">⬇ Exportar CSV</button>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr id="theadRow"></tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="25"><div class="empty-state"><div class="spinner"></div>Cargando...</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="footer-bar" id="footerBar"></div>
+</main>
+
+<script>
+const _fetch=window.fetch;
+window.fetch=async(...args)=>{
+  if(typeof args[0]==='string' && args[0].startsWith('/')) args[0]='__BASE_PATH__'+args[0];
+  const r=await _fetch(...args);
+  if(r.status===401){ window.location.href='__BASE_PATH__/login'; throw new Error('Sesión expirada'); }
+  return r;
+};
+
+function toggleTheme(){
+  const next=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';
+  document.documentElement.setAttribute('data-theme',next);
+  localStorage.setItem('theme',next);
+  document.getElementById('btnTheme').textContent=next==='dark'?'☀️':'🌙';
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  document.getElementById('btnTheme').textContent=document.documentElement.getAttribute('data-theme')==='dark'?'☀️':'🌙';
+});
+
+function esc(s){return s==null?'':String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function fmtFecha(f){const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(f||'');return m?`${m[3]}/${m[2]}/${m[1]}`:'—';}
+function fmtImporte(n){return n!=null?Number(n).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—';}
+function fmtDateTime(dt){if(!dt)return'—';return new Date(dt).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}
+
+// Mismas columnas que el Excel Log_Facturas_PRO, en el mismo orden. `key` es el
+// campo tal cual lo guarda el portal (ver src/db.js); `sort` solo en las columnas
+// que el backend sabe ordenar (whitelist en getFacturas.SORT_COLS).
+const COLUMNAS=[
+  {key:'created_at',    label:'Fecha recepción', sort:'created_at', type:'datetime'},
+  {key:'hotel_destino_factura',   label:'Hotel destino'},
+  {key:'sociedad_destino_factura',label:'Sociedad destino'},
+  {key:'email_remitente', label:'Email remitente'},
+  {key:'asunto_email',    label:'Asunto email'},
+  {key:'detected_pdf_name', label:'Nombre adjunto'},
+  {key:'factura_numero', label:'Nº Factura', sort:'factura_numero'},
+  {key:'proveedor_nombre', label:'Proveedor', sort:'proveedor_nombre'},
+  {key:'proveedor_cif',  label:'CIF proveedor'},
+  {key:'factura_fecha',  label:'Fecha factura', sort:'factura_fecha', type:'fecha'},
+  {key:'importe_total',  label:'Importe', sort:'importe_total', type:'importe'},
+  {key:'forma_pago_detalle', label:'Forma de pago'},
+  {key:'hotel_nombre_odoo', label:'Hotel Odoo'},
+  {key:'sociedad',       label:'Sociedad'},
+  {key:'codigo_hotel',   label:'Código hotel'},
+  {key:'nivel_validacion', label:'Nivel validación'},
+  {key:'metodo_identificacion', label:'Método identificación'},
+  {key:'dw_hotel',       label:'DW Hotel'},
+  {key:'dw_fpago',       label:'DW FPago'},
+  {key:'fecha_docuware', label:'Fecha DocuWare', type:'datetime'},
+  {key:'resultado_docuware', label:'Resultado DocuWare'},
+  {key:'estado_final',   label:'Estado final'},
+  {key:'motivo_revision', label:'Motivo revisión'},
+  {key:'carpeta_imap',   label:'Carpeta IMAP'},
+  {key:'updated_at',     label:'Fecha fin', type:'datetime'},
+];
+
+document.getElementById('theadRow').innerHTML = COLUMNAS.map(c =>
+  `<th class="${c.sort?'':'no-sort'}" ${c.sort?`data-sort="${c.sort}"`:''}>${esc(c.label)} ${c.sort?'<span class="arrow"></span>':''}</th>`
+).join('');
+
+let items=[], offset=0, total=0, busqueda='', desde='', hasta='', sort='created_at', dir='desc', buscarTimer=null;
+const PAGE=150;
+
+function fmtCelda(f,c){
+  const v=f[c.key];
+  if(c.type==='datetime') return fmtDateTime(v);
+  if(c.type==='fecha') return fmtFecha(v);
+  if(c.type==='importe') return fmtImporte(v);
+  return esc(v)||'—';
+}
+
+let reqId=0;
+async function cargar(reset=true){
+  if(reset) offset=0;
+  const params=new URLSearchParams({offset,limit:PAGE,sort,dir});
+  if(busqueda) params.set('q',busqueda);
+  if(desde) params.set('desde',desde);
+  if(hasta) params.set('hasta',hasta);
+  const id=++reqId;
+  const {items:page,total:t}=await fetch(`/api/facturas?${params}`).then(r=>r.json()).catch(()=>({items:[],total:0}));
+  if(id!==reqId) return;
+  items = reset ? page : items.concat(page);
+  total=t;
+  document.getElementById('toolbarInfo').innerHTML=total>0?`<strong>${total}</strong> registros`:'';
+  renderTabla();
+  renderFooter();
+  renderCabeceras();
+}
+
+function renderCabeceras(){
+  document.querySelectorAll('th[data-sort]').forEach(th=>{
+    const arrow=th.querySelector('.arrow');
+    if(th.dataset.sort===sort){ th.classList.add('sorted'); arrow.textContent=dir==='asc'?'↑':'↓'; }
+    else{ th.classList.remove('sorted'); arrow.textContent=''; }
+  });
+}
+
+function renderFooter(){
+  const el=document.getElementById('footerBar');
+  el.innerHTML = items.length<total ? `<button class="btn" onclick="cargarMas()">Cargar más (${items.length}/${total})</button>` : '';
+}
+function cargarMas(){offset+=PAGE;cargar(false);}
+
+function renderTabla(){
+  const tbody=document.getElementById('tbody');
+  if(!items.length){
+    const filtrando=busqueda||desde||hasta;
+    tbody.innerHTML=`<tr><td colspan="${COLUMNAS.length}"><div class="empty-state"><div class="empty-state-icon">${filtrando?'⌕':'📄'}</div>${filtrando?'Ningún resultado con estos filtros':'No hay registros'}</div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML=items.map(f=>`<tr>${COLUMNAS.map(c=>`<td class="${c.type==='importe'?'num':''}${c.key==='factura_numero'?' mono':''}">${fmtCelda(f,c)}</td>`).join('')}</tr>`).join('');
+}
+
+function onFiltroChange(){
+  desde=document.getElementById('inputDesde').value;
+  hasta=document.getElementById('inputHasta').value;
+  document.getElementById('btnClearFecha').style.display=(desde||hasta)?'':'none';
+  cargar();
+}
+function onBuscarInput(){
+  clearTimeout(buscarTimer);
+  buscarTimer=setTimeout(()=>{busqueda=document.getElementById('inputBuscar').value.trim();cargar();},300);
+}
+function limpiarFechas(){
+  desde='';hasta='';
+  document.getElementById('inputDesde').value='';
+  document.getElementById('inputHasta').value='';
+  document.getElementById('btnClearFecha').style.display='none';
+  cargar();
+}
+
+document.getElementById('theadRow').querySelectorAll('th[data-sort]').forEach(th=>{
+  th.addEventListener('click',()=>{
+    const col=th.dataset.sort;
+    if(sort===col) dir = dir==='asc' ? 'desc' : 'asc';
+    else { sort=col; dir = col==='proveedor_nombre'||col==='factura_numero' ? 'asc' : 'desc'; }
+    cargar();
+  });
+});
+
+async function exportarCSV(){
+  const params=new URLSearchParams({offset:0,limit:1000,sort,dir});
+  if(busqueda) params.set('q',busqueda);
+  if(desde) params.set('desde',desde);
+  if(hasta) params.set('hasta',hasta);
+  const {items:rows}=await fetch(`/api/facturas?${params}`).then(r=>r.json());
+  const cols=COLUMNAS.map(c=>c.key);
+  const csvEsc=v=>{ if(v==null) return ''; const s=String(v).replace(/"/g,'""'); return /[",\n]/.test(s)?`"${s}"`:s; };
+  const csv=[COLUMNAS.map(c=>c.label).join(',')].concat(rows.map(r=>cols.map(c=>csvEsc(r[c])).join(','))).join('\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`log_facturas_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function logout(){await fetch('/api/logout',{method:'POST'});window.location.href='__BASE_PATH__/login';}
+
+cargar();
+</script>
+</body>
+</html>

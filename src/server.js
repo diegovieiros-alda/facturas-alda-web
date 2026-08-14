@@ -21,6 +21,7 @@ const readHtml = (file) => fs.readFileSync(path.join(__dirname, '../public', fil
 const INDEX_HTML = readHtml('index.html');
 const LOGIN_HTML = readHtml('login.html');
 const HISTORICO_HTML = readHtml('historico.html');
+const LOG_HTML = readHtml('log.html');
 
 // express-session con MemoryStore (el default) pierde todas las sesiones en cada
 // cold start de Vercel — el usuario se veía deslogueado sin motivo aparente.
@@ -72,6 +73,7 @@ app.get('/login', (req, res) => {
 });
 
 app.get('/historico', requireAuth, (req, res) => res.type('html').send(HISTORICO_HTML));
+app.get('/log', requireAuth, (req, res) => res.type('html').send(LOG_HTML));
 
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
