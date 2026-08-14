@@ -172,8 +172,8 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .undo-banner.show{display:flex}
 .undo-banner .btn{padding:6px 14px;font-size:12px}
 .form-label{display:block;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
-input[type=text],input[type=password],select{width:100%;padding:9px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:8px;outline:none}
-input[type=text]:focus,input[type=password]:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(99,102,241,.15)}
+input[type=text],input[type=password],input[type=date],input[type=number],select{width:100%;padding:9px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:8px;outline:none}
+input[type=text]:focus,input[type=password]:focus,input[type=date]:focus,input[type=number]:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(99,102,241,.15)}
 select option{background:var(--surface);color:var(--text)}
 .admin-user-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)}
 .admin-user-name{flex:1;font-size:13px}
@@ -198,6 +198,7 @@ select option{background:var(--surface);color:var(--text)}
   </div>
   <div class="header-right">
     <span class="user-badge" id="userBadge">—</span>
+    <button class="btn-icon" onclick="openSubirFactura()" title="Subir una factura que no llegó por email" aria-label="Subir factura manualmente">⬆ Subir factura</button>
     <button class="btn-icon" onclick="window.location.href='__BASE_PATH__/historico'" title="Histórico completo" aria-label="Ver histórico completo">📊 Histórico</button>
     <button class="btn-icon" onclick="window.location.href='__BASE_PATH__/log'" title="Log de procesamiento (n8n)" aria-label="Ver log de procesamiento">📋 Log</button>
     <button class="btn-icon" id="btnTheme" onclick="toggleTheme()" title="Cambiar tema" aria-label="Cambiar tema claro/oscuro">🌙</button>
@@ -287,6 +288,36 @@ select option{background:var(--surface);color:var(--text)}
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('modalRechazar')">Cancelar</button>
       <button class="btn btn-danger" onclick="confirmarRechazar()">Rechazar factura</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal subir factura manual -->
+<div class="modal-overlay" id="modalSubir">
+  <div class="modal" style="width:560px">
+    <h3>⬆ Subir factura</h3>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:16px">Para facturas que no llegaron por el buzón automático. Entra como pendiente y sigue el mismo circuito de revisión.</p>
+    <label class="form-label">PDF de la factura</label>
+    <input type="file" accept="application/pdf" id="inputSubirManualPdf" style="width:100%;margin-bottom:16px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><label class="form-label">Proveedor</label><input type="text" id="inputSubirProveedor"></div>
+      <div><label class="form-label">CIF proveedor</label><input type="text" id="inputSubirCif"></div>
+      <div><label class="form-label">Nº factura</label><input type="text" id="inputSubirNumero"></div>
+      <div><label class="form-label">Fecha factura</label><input type="date" id="inputSubirFecha"></div>
+      <div><label class="form-label">Importe total (€)</label><input type="number" step="0.01" id="inputSubirImporte"></div>
+      <div><label class="form-label">Base imponible (€)</label><input type="number" step="0.01" id="inputSubirBase"></div>
+    </div>
+    <label class="form-label">Forma de pago (texto libre)</label>
+    <input type="text" id="inputSubirFpagoTexto" placeholder="Ej. Transferencia, Recibo domiciliado...">
+    <label class="form-label">Hotel / DocuWare</label>
+    <select class="input-hotel" id="inputSubirHotel"></select>
+    <label class="form-label" style="margin-top:8px">Forma de pago DocuWare</label>
+    <input type="text" id="inputSubirFpagoDw" placeholder="Código de forma de pago (00-05)" value="00">
+    <label class="form-label" style="margin-top:8px">Concepto (opcional)</label>
+    <textarea class="input-nota" id="inputSubirConcepto" placeholder="Descripción del servicio/producto..."></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('modalSubir')">Cancelar</button>
+      <button class="btn btn-primary" id="btnConfSubir" onclick="confirmarSubirFactura()">Subir y enviar a revisión</button>
     </div>
   </div>
 </div>
@@ -633,6 +664,62 @@ function openAprobar(){
 }
 function openRechazar(){document.getElementById('inputNotaRechazar').value='';document.getElementById('modalRechazar').classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
+
+function openSubirFactura(){
+  const opciones=Object.entries(HOTELES).sort((a,b)=>a[1].localeCompare(b[1])).map(([cod,nom])=>({value:`${cod}. ${nom}`,label:nom}));
+  document.getElementById('inputSubirHotel').innerHTML='<option value="">— Selecciona —</option>'+opciones.map(o=>`<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+  ['inputSubirManualPdf','inputSubirProveedor','inputSubirCif','inputSubirNumero','inputSubirFecha','inputSubirImporte','inputSubirBase','inputSubirFpagoTexto','inputSubirConcepto'].forEach(id=>{document.getElementById(id).value='';});
+  document.getElementById('inputSubirHotel').value='';
+  document.getElementById('inputSubirFpagoDw').value='00';
+  document.getElementById('modalSubir').classList.add('open');
+}
+
+async function confirmarSubirFactura(){
+  const file=document.getElementById('inputSubirManualPdf').files?.[0];
+  const proveedor_nombre=document.getElementById('inputSubirProveedor').value.trim();
+  const factura_numero=document.getElementById('inputSubirNumero').value.trim();
+  const hotel=document.getElementById('inputSubirHotel').value;
+  if(!file){toast('Selecciona el PDF de la factura','error');return;}
+  if(!proveedor_nombre||!factura_numero){toast('Proveedor y número de factura son obligatorios','error');return;}
+  if(!hotel){toast('Selecciona el hotel/DocuWare','error');return;}
+
+  const btn=document.getElementById('btnConfSubir');
+  btn.disabled=true; btn.textContent='Subiendo...';
+  try{
+    const pdf_base64=await new Promise((resolve,reject)=>{
+      const reader=new FileReader();
+      reader.onload=()=>resolve(reader.result.split(',')[1]);
+      reader.onerror=reject;
+      reader.readAsDataURL(file);
+    });
+    const r=await fetch('/api/facturas/manual',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      pdf_base64, filename:file.name,
+      proveedor_nombre, proveedor_cif:document.getElementById('inputSubirCif').value.trim(),
+      factura_numero, factura_fecha:document.getElementById('inputSubirFecha').value,
+      importe_total:document.getElementById('inputSubirImporte').value||null,
+      base_imponible:document.getElementById('inputSubirBase').value||null,
+      forma_pago_detalle:document.getElementById('inputSubirFpagoTexto').value.trim(),
+      concepto:document.getElementById('inputSubirConcepto').value.trim(),
+      hotel, dw_fpago:document.getElementById('inputSubirFpagoDw').value.trim(),
+    })});
+    const d=await r.json();
+    if(r.ok){
+      closeModal('modalSubir');
+      toast(d.posible_duplicado?'⚠ Subida (posible duplicado, revisa antes de aprobar)':'Factura subida correctamente','success');
+      // La factura entra como pendiente — cambia a esa pestaña para que aparezca en la
+      // lista en vez de dejarla seleccionada pero invisible bajo el filtro actual.
+      filtroActual='pendiente';
+      document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+      document.querySelector('.tab[onclick*="pendiente"]')?.classList.add('active');
+      await cargarFacturas();
+      seleccionar(d.id);
+    } else {
+      toast('Error: '+d.error,'error');
+    }
+  } finally {
+    btn.disabled=false; btn.textContent='Subir y enviar a revisión';
+  }
+}
 
 // Tras aprobar/rechazar, si se estaba en la pestaña Pendientes, selecciona sola la
 // siguiente pendiente en vez de dejar el panel vacío — evita el clic extra por cada

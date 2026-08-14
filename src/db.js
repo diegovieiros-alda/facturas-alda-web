@@ -82,10 +82,11 @@ const queries = {
     run: async (p) => {
       const values = FACTURA_COLS.map(c => p[c] ?? null);
       const placeholders = FACTURA_COLS.map((_, i) => `$${i + 1}`).join(',');
-      await pool.query(
-        `INSERT INTO facturas (${FACTURA_COLS.join(',')}) VALUES (${placeholders})`,
+      const { rows } = await pool.query(
+        `INSERT INTO facturas (${FACTURA_COLS.join(',')}) VALUES (${placeholders}) RETURNING id`,
         values
       );
+      return rows[0].id;
     },
   },
 

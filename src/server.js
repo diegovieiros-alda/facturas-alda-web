@@ -10,6 +10,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const SESSION_SECRET = process.env.SESSION_SECRET || 'alda-facturas-secret-2026';
 const PORTAL_TOKEN = process.env.PORTAL_TOKEN || 'Ald4.2026.P0rtal';   // <-- NUEVO
+// Mismo webhook que n8n manda en Prep_Portal_Payload (n8n_webhook_url) — para una factura
+// subida a mano no hay ejecución previa de n8n de la que copiarlo, así que se fija aquí.
+const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://n8n.gestionalda.es/webhook/factura-validada';
 const SESSION_MAX_AGE = 8 * 60 * 60 * 1000;
 // Vacío en local/Vercel; en el server de la empresa se despliega bajo /facturas
 // (proxy Apache con el prefijo recortado) — ver BASE_PATH en el .env de ese server.
@@ -246,6 +249,53 @@ app.post('/api/facturas/:id/pdf-upload', requireAuth, async (req, res) => {
   await uploadPdf(pdfFilename, buf);
   await queries.updatePdfFilename.run(f.id, pdfFilename, filename || f.detected_pdf_name);
   res.json({ ok: true });
+});
+
+// Alta manual desde el dashboard — para facturas que no llegaron por el buzón que
+// procesa n8n (entregadas en mano, otro canal, etc.). Entra directa como "pendiente"
+// y sigue el mismo circuito de aprobar/rechazar que cualquier otra factura; n8n_webhook_url
+// se fija a mano porque no hay una ejecución previa de n8n de la que copiarlo.
+app.post('/api/facturas/manual', requireAuth, async (req, res) => {
+  const {
+    pdf_base64, filename, proveedor_nombre, proveedor_cif, factura_numero, factura_fecha,
+    importe_total, base_imponible, forma_pago_detalle, concepto, hotel, dw_fpago,
+  } = req.body;
+
+  if (!pdf_base64) return res.status(400).json({ error: 'Falta el PDF de la factura' });
+  if (!proveedor_nombre?.trim() || !factura_numero?.trim()) return res.status(400).json({ error: 'Proveedor y número de factura son obligatorios' });
+  if (!hotel?.trim()) return res.status(400).json({ error: 'Selecciona el hotel/DocuWare' });
+
+  const buf = Buffer.from(pdf_base64, 'base64');
+  if (buf.subarray(0, 5).toString('latin1') !== '%PDF-') return res.status(400).json({ error: 'El archivo no es un PDF válido' });
+
+  const token = `${factura_numero.replace(/[^A-Za-z0-9]/g, '')}_${Date.now()}`;
+  const pdfFilename = `${token}.pdf`;
+  await uploadPdf(pdfFilename, buf);
+
+  const duplicado = await queries.findDuplicado.get(factura_numero, proveedor_nombre, token);
+  const erroresLeves = [];
+  if (duplicado) {
+    erroresLeves.push(
+      `Posible duplicado: ya existe una factura de "${proveedor_nombre}" con el mismo número ` +
+      `(#${duplicado.id}, ${duplicado.estado}, recibida el ${new Date(duplicado.created_at).toLocaleDateString('es-ES')}) — revisar antes de aprobar.`
+    );
+  }
+
+  const id = await queries.insertFactura.run({
+    token, estado: 'pendiente',
+    factura_numero: factura_numero.trim(), factura_fecha: factura_fecha || null,
+    proveedor_nombre: proveedor_nombre.trim(), proveedor_cif: proveedor_cif || null,
+    importe_total: importe_total || null, base_imponible: base_imponible || null,
+    forma_pago_detalle: forma_pago_detalle || null, concepto: concepto || null,
+    dw_hotel: hotel, dw_fpago: dw_fpago?.trim() || '00',
+    detected_pdf_name: filename || `${factura_numero}.pdf`,
+    errores_graves: JSON.stringify([]), errores_leves: JSON.stringify(erroresLeves),
+    pdf_filename: pdfFilename, n8n_webhook_url: N8N_WEBHOOK_URL,
+    enlaces_detectados: JSON.stringify([]),
+    metodo_identificacion: 'Manual (subida directa desde el portal)',
+  });
+  await queries.insertLog.run(id, req.session.user.id, 'subida manual', `Hotel: ${hotel}`);
+  res.json({ ok: true, id, posible_duplicado: !!duplicado });
 });
 
 // ── APROBAR — el await va aquí dentro, esta función es async ─────────────────
