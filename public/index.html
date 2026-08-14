@@ -379,7 +379,13 @@ async function cargarFacturas(reset=true){
   document.getElementById('tabCountTotal').textContent=stats.total||0;
   document.getElementById('sumImporte').textContent=total>0?`${Number(totalImporte).toLocaleString('es-ES',{minimumFractionDigits:2})} €`:'';
   renderLista();
-  if(facturaActual){const u=facturas.find(f=>f.id===facturaActual.id);if(u)renderDetail(u);}
+  // Solo re-renderizar el detalle si algo cambió de verdad (ej. otro revisor la
+  // procesó mientras tanto) — si no, cada poll de 30s reconstruía el panel entero,
+  // incluido el <iframe> del PDF, provocando una "recarga" visible sin motivo real.
+  if(facturaActual){
+    const u=facturas.find(f=>f.id===facturaActual.id);
+    if(u && JSON.stringify(u)!==JSON.stringify(facturaActual)){ facturaActual=u; renderDetail(u); }
+  }
 }
 
 function cargarMas(){offset+=PAGE;cargarFacturas(false);}
