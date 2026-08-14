@@ -513,6 +513,7 @@ function renderDetail(f){
   const motivoBaseTxt=motivoBase[f.motivo_revision]||'';
   const motivoTxt=motivoBaseTxt?motivoBaseTxt+(isPendiente?' — requiere imputación manual':' — revisión completada'):'';
   const alertaHotel=isPendiente && MOTIVOS_HOTEL.includes(f.motivo_revision);
+  const docuware=docuwareEstado(f);
   const tags=tagsFactura(f);
   // "Falta" = dato que normalmente debería venir dado que la factura sí tiene
   // importe/es real, distinto de "no aplica" — se resalta en vez de mostrar un
@@ -550,6 +551,7 @@ function renderDetail(f){
           <div><div class="dato-label">Sociedad</div><div class="dato-valor">${esc(f.sociedad)||'—'}</div></div>
           <div class="${alertaHotel?'dato-alerta':''}"><div class="dato-label">DocuWare hotel</div><div class="dato-valor">${esc(nombreSinCodigo(f.hotel_nombre_editado||f.dw_hotel))||'PENDIENTE'}</div></div>
           <div><div class="dato-label">Forma de pago DW</div><div class="dato-valor">${esc(f.dw_fpago_editado||f.dw_fpago)||'—'}</div></div>
+          <div><div class="dato-label">Subida a DocuWare</div><div class="dato-valor ${docuware.clase}">${docuware.txt}</div></div>
         </div>
         ${f.nota_revisor?`<div style="margin-top:12px"><div class="dato-label">Nota del revisor</div><div class="dato-valor" style="font-size:12px;color:var(--text2)">${esc(f.nota_revisor)}</div></div>`:''}
       </div></div>
@@ -714,6 +716,15 @@ async function crearUsuario(){
 async function eliminarUsuario(id){if(!confirm('¿Eliminar usuario?'))return;await fetch(`/api/usuarios/${id}`,{method:'DELETE'});await cargarUsuarios();}
 async function logout(){await fetch('/api/logout',{method:'POST'});window.location.href='__BASE_PATH__/login';}
 function fmtDate(dt){if(!dt)return'—';return new Date(dt).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}
+// resultado_docuware solo llega hoy por dos vías: aprobar desde el portal (llamada directa a
+// n8n) o la notificación de archivado automático — esta última todavía no está desplegada en
+// el flujo de n8n, así que la mayoría de facturas auto-procesadas no tienen este dato todavía.
+function docuwareEstado(f){
+  if(f.resultado_docuware==='OK') return {txt:'✅ Sí — '+fmtDate(f.fecha_docuware), clase:''};
+  if(f.resultado_docuware) return {txt:'⚠️ '+f.resultado_docuware, clase:'dato-falta'};
+  if(f.estado==='pendiente') return {txt:'—', clase:''};
+  return {txt:'Sin confirmar por n8n', clase:'dato-falta'};
+}
 // factura_fecha es texto "YYYY-MM-DD" plano (sin hora) — se reordena directo para evitar que
 // pasarlo por Date()/toLocaleString corra el día según la zona horaria del navegador.
 function fmtFecha(f){const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(f||'');return m?`${m[3]}/${m[2]}/${m[1]}`:'—';}
