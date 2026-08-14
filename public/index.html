@@ -82,6 +82,11 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .sum-importe{font-size:11px;color:var(--text3);text-align:right}
 .sum-importe:not(:empty)::before{content:'Suma: '}
 .factura-list{overflow-y:auto;flex:1}
+.pager{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-top:1px solid var(--border);flex-shrink:0;font-size:12px}
+.pager button{background:none;border:1px solid var(--border);color:var(--text2);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px;transition:all .15s}
+.pager button:hover:not(:disabled){border-color:var(--text3);color:var(--text);background:var(--surface2)}
+.pager button:disabled{opacity:.35;cursor:not-allowed}
+.pager-info{font-weight:600;color:var(--text)}
 .factura-item{padding:14px 16px 14px 13px;border-bottom:1px solid var(--border);border-left:3px solid transparent;cursor:pointer;transition:background .12s,border-color .12s}
 .factura-item.estado-pendiente{border-left-color:rgba(180,83,9,.4)}
 .factura-item.estado-aprobada{border-left-color:rgba(15,157,88,.35)}
@@ -236,6 +241,7 @@ select option{background:var(--surface);color:var(--text)}
     <div class="factura-list" id="listaFacturas">
       <div class="empty-state"><div class="spinner"></div>Cargando...</div>
     </div>
+    <div class="pager" id="pager"></div>
   </div>
 
   <div class="detail" id="detail">
@@ -306,7 +312,7 @@ const HOTELES={"012":"Coste General Consultores Hoteleros Integrales S.L","100":
 const MOTIVOS_HOTEL = ['factura_dirigida_a_sociedad', 'multiples_centros', 'costes_generales_posible_hotel'];
 
 let facturas=[], facturaActual=null, filtroActual='pendiente', me=null;
-let offset=0, total=0, busqueda='', buscarTimer=null, desde='', hasta='', hotelFiltro='', importeMin='', importeMax='';
+let pagina=0, total=0, busqueda='', buscarTimer=null, desde='', hasta='', hotelFiltro='', importeMin='', importeMax='';
 const PAGE=50;
 
 // La sesión puede expirar (ej. redeploy del servidor) — si cualquier fetch devuelve 401,
@@ -346,13 +352,13 @@ async function init(){
   const {hoteles}=await fetch('/api/facturas/filtros').then(r=>r.json()).catch(()=>({hoteles:[]}));
   document.getElementById('selHotelFiltro').insertAdjacentHTML('beforeend', hoteles.map(h=>`<option value="${esc(h)}">${esc(h)}</option>`).join(''));
   await cargarFacturas();
-  setInterval(cargarFacturas,30000);
+  setInterval(()=>cargarFacturas(false),30000);
 }
 
 let facturasReqId=0;
-async function cargarFacturas(reset=true){
-  if(reset) offset=0;
-  const params=new URLSearchParams({offset,limit:PAGE});
+async function cargarFacturas(resetPagina=true){
+  if(resetPagina) pagina=0;
+  const params=new URLSearchParams({offset:pagina*PAGE,limit:PAGE});
   if(filtroActual!=='all') params.set('estado',filtroActual);
   if(busqueda) params.set('q',busqueda);
   if(desde) params.set('desde',desde);
@@ -366,7 +372,7 @@ async function cargarFacturas(reset=true){
   const reqId=++facturasReqId;
   const {items,total:t,totalImporte}=await fetch(`/api/facturas?${params}`).then(r=>r.json()).catch(()=>({items:[],total:0,totalImporte:0}));
   if(reqId!==facturasReqId) return;
-  facturas = reset ? items : facturas.concat(items);
+  facturas=items;
   total=t;
   const statsParams=new URLSearchParams();
   if(desde) statsParams.set('desde',desde);
@@ -380,6 +386,7 @@ async function cargarFacturas(reset=true){
   document.getElementById('tabCountTotal').textContent=stats.total||0;
   document.getElementById('sumImporte').textContent=total>0?`${Number(totalImporte).toLocaleString('es-ES',{minimumFractionDigits:2})} €`:'';
   renderLista();
+  renderPager();
   // Solo re-renderizar el detalle si algo cambió de verdad (ej. otro revisor la
   // procesó mientras tanto) — si no, cada poll de 30s reconstruía el panel entero,
   // incluido el <iframe> del PDF, provocando una "recarga" visible sin motivo real.
@@ -389,7 +396,19 @@ async function cargarFacturas(reset=true){
   }
 }
 
-function cargarMas(){offset+=PAGE;cargarFacturas(false);}
+function renderPager(){
+  const el=document.getElementById('pager');
+  const totalPaginas=Math.max(1,Math.ceil(total/PAGE));
+  if(total<=PAGE){ el.innerHTML=''; return; }
+  el.innerHTML=`<button ${pagina===0?'disabled':''} onclick="irPagina(${pagina-1})">← Anterior</button>
+    <span class="pager-info">Página ${pagina+1} de ${totalPaginas}</span>
+    <button ${pagina+1>=totalPaginas?'disabled':''} onclick="irPagina(${pagina+1})">Siguiente →</button>`;
+}
+function irPagina(p){
+  pagina=p;
+  document.getElementById('listaFacturas').scrollTop=0;
+  cargarFacturas(false);
+}
 
 function onBuscarInput(){
   clearTimeout(buscarTimer);
@@ -455,8 +474,7 @@ function renderLista(){
       <div class="fi-footer"><span class="fi-importe">${f.importe_total!=null?Number(f.importe_total).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</span><span class="fi-badge badge-${f.estado}">${f.estado}</span></div>
       <div class="fi-hotel">→ ${esc(f.hotel_nombre_editado||f.hotel_nombre_odoo)||'Sin identificar'}</div>
     </div>`;
-  }).join('')
-    + (facturas.length<total?`<div style="padding:12px;text-align:center"><button class="btn btn-secondary btn-sm" onclick="cargarMas()">Cargar más (${facturas.length}/${total})</button></div>`:'');
+  }).join('');
 }
 
 async function seleccionar(id){
