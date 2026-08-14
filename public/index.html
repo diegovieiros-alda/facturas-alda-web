@@ -507,9 +507,12 @@ function renderDetail(f){
   const isPendiente=f.estado==='pendiente';
   const eg=Array.isArray(f.errores_graves)?f.errores_graves:[];
   const el=Array.isArray(f.errores_leves)?f.errores_leves:[];
-  const motivoMap={'factura_dirigida_a_sociedad':'📋 Factura dirigida a sociedad — requiere imputación manual','multiples_centros':'🏨 Múltiples centros detectados','costes_generales_posible_hotel':'🔍 Posible hotel no identificado correctamente'};
-  const motivoTxt=motivoMap[f.motivo_revision]||'';
-  const alertaHotel=MOTIVOS_HOTEL.includes(f.motivo_revision);
+  // El motivo describe por qué se marcó para revisión — una vez aprobada/rechazada
+  // ya se actuó sobre él, así que no debe seguir sonando a aviso pendiente ("requiere...").
+  const motivoBase={'factura_dirigida_a_sociedad':'📋 Factura dirigida a sociedad','multiples_centros':'🏨 Múltiples centros detectados','costes_generales_posible_hotel':'🔍 Posible hotel no identificado correctamente'};
+  const motivoBaseTxt=motivoBase[f.motivo_revision]||'';
+  const motivoTxt=motivoBaseTxt?motivoBaseTxt+(isPendiente?' — requiere imputación manual':' — revisión completada'):'';
+  const alertaHotel=isPendiente && MOTIVOS_HOTEL.includes(f.motivo_revision);
   const tags=tagsFactura(f);
   // "Falta" = dato que normalmente debería venir dado que la factura sí tiene
   // importe/es real, distinto de "no aplica" — se resalta en vez de mostrar un
@@ -527,7 +530,7 @@ function renderDetail(f){
       ${isPendiente?`<div class="detail-actions"><button class="btn btn-danger" onclick="openRechazar()">✗ Rechazar <span style="opacity:.6">(R)</span></button><button class="btn btn-primary" onclick="openAprobar()">✓ Aprobar <span style="opacity:.6">(A)</span></button></div>`:`<div style="font-size:12px;color:var(--text3)">Revisada por ${esc(f.revisor_nombre)||'—'}<br>${fmtDate(f.revisado_at)}</div>`}
     </div>
     <div class="detail-body">
-      ${motivoTxt?`<div style="background:var(--motivo-bg);border:1px solid var(--motivo-border);border-radius:8px;padding:12px 16px;font-size:13px;color:var(--motivo-fg)">${motivoTxt}</div>`:''}
+      ${motivoTxt?`<div style="background:${isPendiente?'var(--motivo-bg)':'var(--surface2)'};border:1px solid ${isPendiente?'var(--motivo-border)':'var(--border)'};border-radius:8px;padding:12px 16px;font-size:13px;color:${isPendiente?'var(--motivo-fg)':'var(--text2)'}">${motivoTxt}</div>`:''}
       ${eg.length||el.length?`<div class="card"><div class="card-header">Incidencias detectadas</div><div class="card-body"><div class="errores">${eg.map(e=>`<div class="error-item error-grave">🔴 ${esc(e)}</div>`).join('')}${el.map(e=>`<div class="error-item error-leve">🟡 ${esc(e)}</div>`).join('')}</div></div></div>`:''}
       <div class="card"><div class="card-header">Datos de la factura</div><div class="card-body">
         <div class="datos-grid">
