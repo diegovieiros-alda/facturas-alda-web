@@ -73,6 +73,9 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .search-wrap::before{content:'⌕';position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px;pointer-events:none}
 .search-wrap input{padding-left:28px!important}
 .filtros-extra select,.filtros-extra input[type=text],.filtros-extra input[type=search]{width:100%;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;outline:none}
+.btn-filtros-toggle{background:none;border:none;color:var(--accent2);font-size:11px;font-weight:600;cursor:pointer;padding:2px 0;text-align:left;align-self:flex-start}
+.btn-filtros-toggle:hover{text-decoration:underline}
+.filtros-avanzados{display:flex;flex-direction:column;gap:8px}
 .fecha-row,.importe-row{display:flex;align-items:center;gap:6px}
 .fecha-row input[type=date],.importe-row input[type=number]{flex:1;min-width:0;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:11px;outline:none}
 .fecha-row input[type=date]:focus,.importe-row input[type=number]:focus{border-color:var(--accent)}
@@ -140,7 +143,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;transition:border-color .15s;box-shadow:var(--shadow-sm)}
 .card-header{padding:12px 16px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;display:flex;align-items:center;gap:6px}
 .card-body{padding:16px}
-.datos-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.datos-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px 24px}
 .dato-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
 .dato-valor{font-size:13px;font-weight:500}
 .dato-valor.importe{font-size:19px;font-weight:700;color:var(--green);letter-spacing:-.3px}
@@ -225,18 +228,21 @@ select option{background:var(--surface);color:var(--text)}
       <select id="selHotelFiltro" onchange="onFiltroExtraChange()" aria-label="Filtrar por hotel">
         <option value="">Todos los hoteles</option>
       </select>
-      <div class="fecha-row">
-        <span>Del</span>
-        <input type="date" id="inputDesde" onchange="onFechaChange()" aria-label="Fecha desde">
-        <span>al</span>
-        <input type="date" id="inputHasta" onchange="onFechaChange()" aria-label="Fecha hasta">
-        <button class="btn-clear-fecha" id="btnClearFecha" onclick="limpiarFechas()" style="display:none" title="Quitar filtro de fechas" aria-label="Quitar filtro de fechas">✕</button>
-      </div>
-      <div class="importe-row">
-        <span>€</span>
-        <input type="number" id="inputImporteMin" placeholder="Mín" onchange="onFiltroExtraChange()" aria-label="Importe mínimo">
-        <span>–</span>
-        <input type="number" id="inputImporteMax" placeholder="Máx" onchange="onFiltroExtraChange()" aria-label="Importe máximo">
+      <button class="btn-filtros-toggle" id="btnFiltrosAvanzados" onclick="toggleFiltrosAvanzados()" aria-expanded="false" aria-controls="filtrosAvanzados">Más filtros ▾</button>
+      <div class="filtros-avanzados" id="filtrosAvanzados" style="display:none">
+        <div class="fecha-row">
+          <span>Del</span>
+          <input type="date" id="inputDesde" onchange="onFechaChange()" aria-label="Fecha desde">
+          <span>al</span>
+          <input type="date" id="inputHasta" onchange="onFechaChange()" aria-label="Fecha hasta">
+          <button class="btn-clear-fecha" id="btnClearFecha" onclick="limpiarFechas()" style="display:none" title="Quitar filtro de fechas" aria-label="Quitar filtro de fechas">✕</button>
+        </div>
+        <div class="importe-row">
+          <span>€</span>
+          <input type="number" id="inputImporteMin" placeholder="Mín" onchange="onFiltroExtraChange()" aria-label="Importe mínimo">
+          <span>–</span>
+          <input type="number" id="inputImporteMax" placeholder="Máx" onchange="onFiltroExtraChange()" aria-label="Importe máximo">
+        </div>
       </div>
       <div class="sum-importe" id="sumImporte"></div>
     </div>
@@ -341,6 +347,9 @@ document.addEventListener('DOMContentLoaded',()=>{
 // meterlo en innerHTML — sin esto, un proveedor podía inyectar JS vía el nombre,
 // concepto, asunto, etc. y ejecutarlo en la sesión de un admin autenticado.
 function esc(s){return s==null?'':String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// El valor real ("233. Alda El Espinar") viaja tal cual a DocuWare/n8n, que lo
+// necesita con el código — esto solo limpia lo que se le muestra al revisor.
+function nombreSinCodigo(h){return h?h.replace(/^\d+\.\s*/,''):h;}
 
 function copiar(texto){
   if(!texto) return;
@@ -352,7 +361,7 @@ async function init(){
   document.getElementById('userBadge').textContent=me.nombre;
   if(me.rol==='admin') document.getElementById('btnAdmin').style.display='';
   const {hoteles}=await fetch('/api/facturas/filtros').then(r=>r.json()).catch(()=>({hoteles:[]}));
-  document.getElementById('selHotelFiltro').insertAdjacentHTML('beforeend', hoteles.map(h=>`<option value="${esc(h)}">${esc(h)}</option>`).join(''));
+  document.getElementById('selHotelFiltro').insertAdjacentHTML('beforeend', hoteles.map(h=>`<option value="${esc(h)}">${esc(nombreSinCodigo(h))}</option>`).join(''));
   await cargarFacturas();
   setInterval(()=>cargarFacturas(false),30000);
 }
@@ -432,6 +441,15 @@ function limpiarFechas(){
   cargarFacturas();
 }
 
+function toggleFiltrosAvanzados(){
+  const el=document.getElementById('filtrosAvanzados');
+  const btn=document.getElementById('btnFiltrosAvanzados');
+  const abrir=el.style.display==='none';
+  el.style.display=abrir?'flex':'none';
+  btn.textContent=abrir?'Menos filtros ▴':'Más filtros ▾';
+  btn.setAttribute('aria-expanded',abrir?'true':'false');
+}
+
 function onFiltroExtraChange(){
   hotelFiltro=document.getElementById('selHotelFiltro').value;
   importeMin=document.getElementById('inputImporteMin').value;
@@ -474,7 +492,7 @@ function renderLista(){
       <div class="fi-proveedor">${esc(f.proveedor_nombre)||'—'}</div>
       ${tags?`<div class="fi-tags">${tags}</div>`:''}
       <div class="fi-footer"><span class="fi-importe">${f.importe_total!=null?Number(f.importe_total).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</span><span class="fi-badge badge-${f.estado}">${f.estado}</span></div>
-      <div class="fi-hotel">→ ${esc(f.hotel_nombre_editado||f.hotel_nombre_odoo)||'Sin identificar'}</div>
+      <div class="fi-hotel">→ ${esc(nombreSinCodigo(f.hotel_nombre_editado)||f.hotel_nombre_odoo)||'Sin identificar'}</div>
     </div>`;
   }).join('');
 }
@@ -527,7 +545,7 @@ function renderDetail(f){
           <div><div class="dato-label">Identificado como</div><div class="dato-valor">${esc(f.hotel_nombre_odoo)||'No identificado'}</div></div>
           <div><div class="dato-label">Código hotel</div><div class="dato-valor">${esc(f.codigo_hotel)||'—'}</div></div>
           <div><div class="dato-label">Sociedad</div><div class="dato-valor">${esc(f.sociedad)||'—'}</div></div>
-          <div class="${alertaHotel?'dato-alerta':''}"><div class="dato-label">DocuWare hotel</div><div class="dato-valor">${esc(f.hotel_nombre_editado||f.dw_hotel)||'PENDIENTE'}</div></div>
+          <div class="${alertaHotel?'dato-alerta':''}"><div class="dato-label">DocuWare hotel</div><div class="dato-valor">${esc(nombreSinCodigo(f.hotel_nombre_editado||f.dw_hotel))||'PENDIENTE'}</div></div>
           <div><div class="dato-label">Forma de pago DW</div><div class="dato-valor">${esc(f.dw_fpago_editado||f.dw_fpago)||'—'}</div></div>
         </div>
         ${f.nota_revisor?`<div style="margin-top:12px"><div class="dato-label">Nota del revisor</div><div class="dato-valor" style="font-size:12px;color:var(--text2)">${esc(f.nota_revisor)}</div></div>`:''}
@@ -599,9 +617,10 @@ function openAprobar(){
   if(!facturaActual)return;
   if(!facturaActual.pdf_filename){toast('Esta factura no tiene PDF. Súbelo antes de aprobar.','error');return;}
   const actual=facturaActual.hotel_nombre_editado||facturaActual.dw_hotel||'';
-  const opciones=Object.entries(HOTELES).sort((a,b)=>a[1].localeCompare(b[1])).map(([cod,nom])=>`${cod}. ${nom}`);
-  if(actual && !opciones.includes(actual)) opciones.unshift(actual);
-  document.getElementById('inputHotel').innerHTML=opciones.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join('');
+  // value = "código. Nombre" (lo que espera DocuWare) — label = solo el nombre para el revisor.
+  const opciones=Object.entries(HOTELES).sort((a,b)=>a[1].localeCompare(b[1])).map(([cod,nom])=>({value:`${cod}. ${nom}`,label:nom}));
+  if(actual && !opciones.some(o=>o.value===actual)) opciones.unshift({value:actual,label:nombreSinCodigo(actual)});
+  document.getElementById('inputHotel').innerHTML=opciones.map(o=>`<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
   document.getElementById('inputHotel').value=actual;
   document.getElementById('inputFpago').value=facturaActual.dw_fpago_editado||facturaActual.dw_fpago||'';
   document.getElementById('inputNotaAprobar').value='';
