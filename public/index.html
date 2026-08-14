@@ -502,7 +502,7 @@ function setFiltro(f,el){
 function tagsFactura(f){
   const tags=[];
   if(f.posible_duplicado) tags.push('<span class="tag-warn">⚠ Duplicada</span>');
-  if(!f.hotel_nombre_editado && (!f.hotel_nombre_odoo || f.hotel_nombre_odoo==='No identificado')) tags.push('<span class="tag-warn">Sin hotel</span>');
+  if(!f.hotel_nombre_editado && !f.dw_hotel && (!f.hotel_nombre_odoo || f.hotel_nombre_odoo==='No identificado')) tags.push('<span class="tag-warn">Sin hotel</span>');
   if(f.importe_total!=null && f.importe_total<0) tags.push('<span class="tag-info">↩ Abono</span>');
   return tags.join('');
 }
@@ -523,7 +523,7 @@ function renderLista(){
       <div class="fi-proveedor">${esc(f.proveedor_nombre)||'—'}</div>
       ${tags?`<div class="fi-tags">${tags}</div>`:''}
       <div class="fi-footer"><span class="fi-importe">${f.importe_total!=null?Number(f.importe_total).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—'}</span><span class="fi-badge badge-${f.estado}">${f.estado}</span></div>
-      <div class="fi-hotel">→ ${esc(nombreSinCodigo(f.hotel_nombre_editado)||f.hotel_nombre_odoo)||'Sin identificar'}</div>
+      <div class="fi-hotel">→ ${esc(nombreSinCodigo(f.hotel_nombre_editado||f.dw_hotel)||f.hotel_nombre_odoo)||'Sin identificar'}</div>
     </div>`;
   }).join('');
 }

@@ -279,7 +279,7 @@ function renderTabla(){
       <td><span class="chevron">${abierto?'▾':'▸'}</span>${fmtFecha(f.factura_fecha)}</td>
       <td>${esc(f.factura_numero)||'—'}${f.posible_duplicado?'<span class="mini-tag" title="Otra factura comparte número y proveedor">Duplicada</span>':''}</td>
       <td title="${esc(f.proveedor_nombre)}">${esc(f.proveedor_nombre)||'—'}</td>
-      <td title="${esc(f.hotel_nombre_editado||f.hotel_nombre_odoo)}">${esc(nombreSinCodigo(f.hotel_nombre_editado)||f.hotel_nombre_odoo)||'—'}${(!f.hotel_nombre_editado&&(!f.hotel_nombre_odoo||f.hotel_nombre_odoo==='No identificado'))?'<span class="mini-tag">Sin hotel</span>':''}</td>
+      <td title="${esc(f.hotel_nombre_editado||f.dw_hotel||f.hotel_nombre_odoo)}">${esc(nombreSinCodigo(f.hotel_nombre_editado||f.dw_hotel)||f.hotel_nombre_odoo)||'—'}${(!f.hotel_nombre_editado&&!f.dw_hotel&&(!f.hotel_nombre_odoo||f.hotel_nombre_odoo==='No identificado'))?'<span class="mini-tag">Sin hotel</span>':''}</td>
       <td class="num">${fmtImporte(f.importe_total)}${f.importe_total!=null&&f.importe_total<0?'<span class="mini-tag info">Abono</span>':''}</td>
       <td><span class="fi-badge badge-${f.estado}">${f.estado}</span></td>
       <td>${esc(f.revisor_nombre)||'—'}</td>
