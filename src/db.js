@@ -111,7 +111,7 @@ const queries = {
       // lexicográfica coincide con la cronológica sin necesidad de castear a date.
       if (desde) { params.push(desde); where.push(`f.factura_fecha >= $${params.length}`); }
       if (hasta) { params.push(hasta); where.push(`f.factura_fecha <= $${params.length}`); }
-      if (hotel) { params.push(hotel); where.push(`coalesce(f.hotel_nombre_editado, f.hotel_nombre_odoo) = $${params.length}`); }
+      if (hotel) { params.push(hotel); where.push(`coalesce(f.hotel_nombre_editado, f.dw_hotel, f.hotel_nombre_odoo) = $${params.length}`); }
       if (sociedad) { params.push(sociedad); where.push(`f.sociedad = $${params.length}`); }
       if (importeMin != null && importeMin !== '') { params.push(importeMin); where.push(`f.importe_total >= $${params.length}`); }
       if (importeMax != null && importeMax !== '') { params.push(importeMax); where.push(`f.importe_total <= $${params.length}`); }
@@ -146,7 +146,7 @@ const queries = {
   getFiltros: {
     get: async () => {
       const [hoteles, sociedades] = await Promise.all([
-        pool.query(`SELECT DISTINCT coalesce(hotel_nombre_editado, hotel_nombre_odoo) AS h FROM facturas WHERE coalesce(hotel_nombre_editado, hotel_nombre_odoo) IS NOT NULL ORDER BY 1`),
+        pool.query(`SELECT DISTINCT coalesce(hotel_nombre_editado, dw_hotel, hotel_nombre_odoo) AS h FROM facturas WHERE coalesce(hotel_nombre_editado, dw_hotel, hotel_nombre_odoo) IS NOT NULL ORDER BY 1`),
         pool.query(`SELECT DISTINCT sociedad FROM facturas WHERE sociedad IS NOT NULL ORDER BY 1`),
       ]);
       return { hoteles: hoteles.rows.map(r => r.h), sociedades: sociedades.rows.map(r => r.sociedad) };
@@ -185,6 +185,23 @@ const queries = {
       const { rows } = await pool.query('SELECT * FROM facturas WHERE token = $1', [token]);
       return rows[0];
     },
+  },
+
+  // Reclama la factura de forma atómica antes de llamar a n8n — si dos revisores
+  // (o un doble clic) intentan aprobar/rechazar la misma factura a la vez, solo uno
+  // gana esta carrera; el resto recibe "ya procesada" en vez de disparar dos
+  // archivados/notificaciones en DocuWare para la misma factura.
+  claimParaProcesar: {
+    run: async (id, estado) => {
+      const { rowCount } = await pool.query(
+        `UPDATE facturas SET estado=$2, updated_at=now() WHERE id=$1 AND estado='pendiente'`,
+        [id, estado]
+      );
+      return rowCount === 1;
+    },
+  },
+  revertAPendiente: {
+    run: async (id) => pool.query(`UPDATE facturas SET estado='pendiente', updated_at=now() WHERE id=$1`, [id]),
   },
 
   updateEstado: {

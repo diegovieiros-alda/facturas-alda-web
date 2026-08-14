@@ -224,8 +224,12 @@ app.get('/api/facturas/:id/pdf', requireAuth, async (req, res) => {
   if (!f?.pdf_filename) return res.status(404).json({ error: 'PDF no disponible' });
   const buf = await downloadPdf(f.pdf_filename);
   if (!buf) return res.status(404).json({ error: 'Archivo no encontrado' });
+  // detected_pdf_name puede venir del nombre de archivo que trae el email (n8n) o de un
+  // input file del navegador — sin sanitizar, una comilla o salto de línea podría inyectar
+  // cabeceras HTTP adicionales en la respuesta (response splitting).
+  const safeName = (f.detected_pdf_name || f.pdf_filename || 'factura.pdf').replace(/[\r\n"]/g, '');
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="${f.detected_pdf_name || f.pdf_filename}"`);
+  res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
   res.send(buf);
 });
 
@@ -304,6 +308,13 @@ app.post('/api/facturas/:id/aprobar', requireAuth, async (req, res) => {
   if (!f) return res.status(404).json({ error: 'No encontrada' });
   if (f.estado !== 'pendiente') return res.status(400).json({ error: 'Ya procesada' });
 
+  // Reclama la factura de forma atómica ANTES de llamar a n8n — si dos requests llegan
+  // a la vez (doble clic, dos revisores en la misma factura), solo una gana esta carrera.
+  // Si algo falla después, se revierte a 'pendiente' para que se pueda reintentar.
+  if (!await queries.claimParaProcesar.run(f.id, 'aprobada')) {
+    return res.status(409).json({ error: 'Esta factura ya está siendo procesada.' });
+  }
+
   const { hotel_nombre_editado, dw_fpago_editado, nota_revisor } = req.body;
   const hotelFinal = hotel_nombre_editado?.trim() || f.dw_hotel;
   const fpagoFinal = dw_fpago_editado?.trim() || f.dw_fpago;
@@ -323,6 +334,7 @@ app.post('/api/facturas/:id/aprobar', requireAuth, async (req, res) => {
     // "solo enlace" o donde falló la subida del PDF) — lo cortamos aquí con un mensaje
     // claro en vez de dejar que la factura quede "aprobada" en el portal sin archivarse.
     if (!pdf_base64) {
+      await queries.revertAPendiente.run(f.id);
       return res.status(400).json({ error: 'Esta factura no tiene un PDF asociado. Sube el PDF (ver enlace de descarga) antes de aprobar, o no se podrá archivar en DocuWare.' });
     }
 
@@ -341,19 +353,21 @@ app.post('/api/facturas/:id/aprobar', requireAuth, async (req, res) => {
           pdf_base64,                            // <-- el PDF viaja de vuelta
         }),
       });
-      if (!r.ok) return res.status(502).json({ error: 'Error n8n/DocuWare: ' + await r.text() });
+      if (!r.ok) { await queries.revertAPendiente.run(f.id); return res.status(502).json({ error: 'Error n8n/DocuWare: ' + await r.text() }); }
       // n8n puede responder 200 con archivado:false (p.ej. si Handler_Validacion
       // rechazó el archivado) — sin esto, el portal marcaba "aprobada" aunque
       // DocuWare nunca recibiera la factura.
       let body;
       try { body = await r.json(); } catch (_) { body = {}; }
       if (body.archivado === false) {
+        await queries.revertAPendiente.run(f.id);
         return res.status(502).json({ error: 'n8n no pudo archivar la factura en DocuWare' + (body.error ? ': ' + body.error : '') + '. La factura sigue pendiente.' });
       }
       mensaje = 'Factura aprobada y enviada a DocuWare';
       resultadoDocuware = 'OK';
       fechaDocuware = new Date();
     } catch (e) {
+      await queries.revertAPendiente.run(f.id);
       return res.status(502).json({ error: 'No se pudo contactar n8n: ' + e.message });
     }
   } else {
@@ -379,13 +393,19 @@ app.post('/api/facturas/:id/rechazar', requireAuth, async (req, res) => {
   // Motivo obligatorio para auditoría — validado también aquí, no solo en el
   // formulario, para que no se pueda saltear con una llamada directa a la API.
   if (!nota_revisor || !nota_revisor.trim()) return res.status(400).json({ error: 'El motivo del rechazo es obligatorio' });
+
+  if (!await queries.claimParaProcesar.run(f.id, 'rechazada')) {
+    return res.status(409).json({ error: 'Esta factura ya está siendo procesada.' });
+  }
+
   if (f.n8n_webhook_url) {
     // Antes se ignoraba la respuesta de n8n aquí, a diferencia de /aprobar — un fallo
     // real (n8n caído, error al notificar el rechazo) quedaba invisible para el revisor.
     try {
       const r = await fetch(f.n8n_webhook_url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: f.token, accion: 'rechazar', nota: nota_revisor }) });
-      if (!r.ok) return res.status(502).json({ error: 'Error n8n al procesar el rechazo: ' + await r.text() });
+      if (!r.ok) { await queries.revertAPendiente.run(f.id); return res.status(502).json({ error: 'Error n8n al procesar el rechazo: ' + await r.text() }); }
     } catch (e) {
+      await queries.revertAPendiente.run(f.id);
       return res.status(502).json({ error: 'No se pudo contactar n8n: ' + e.message });
     }
   }
