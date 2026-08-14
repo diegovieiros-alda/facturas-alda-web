@@ -54,18 +54,28 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;padding:20px 24px
 .toolbar-info strong{color:var(--text)}
 .btn{padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--text);transition:all .15s}
 .btn:hover{border-color:var(--text3);background:var(--surface3)}
-.table-wrap{flex:1;overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-sm)}
-table{width:100%;border-collapse:collapse;font-size:12px}
-thead th{position:sticky;top:0;background:var(--surface2);text-align:left;padding:9px 12px;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:700;cursor:pointer;user-select:none;border-bottom:1px solid var(--border);white-space:nowrap;z-index:1}
-thead th:hover{color:var(--text)}
-thead th.sorted{color:var(--accent)}
-thead th .arrow{font-size:9px;margin-left:3px;opacity:.7}
-thead th.no-sort{cursor:default}
-tbody td{padding:8px 12px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
-tbody tr:hover{background:var(--surface2)}
-tbody tr:last-child td{border-bottom:none}
-td.num{text-align:right;font-variant-numeric:tabular-nums}
-td.mono{font-family:monospace;font-size:11px}
+.sort-row{display:flex;align-items:center;gap:6px}
+.sort-row select{padding:7px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;outline:none}
+.lista{flex:1;overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:2px}
+.ficha{background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-sm);overflow:hidden}
+.ficha summary{list-style:none;cursor:pointer;padding:11px 14px;display:flex;align-items:center;gap:14px;font-size:13px}
+.ficha summary:hover{background:var(--surface2)}
+.ficha summary::-webkit-details-marker{display:none}
+.ficha summary::before{content:'▸';color:var(--text3);font-size:11px;transition:transform .15s;flex-shrink:0}
+.ficha[open] summary::before{transform:rotate(90deg)}
+.ficha[open] summary{border-bottom:1px solid var(--border)}
+.s-fecha{color:var(--text3);font-size:12px;white-space:nowrap;flex-shrink:0}
+.s-num{font-family:monospace;font-size:12px;color:var(--text2);flex-shrink:0}
+.s-proveedor{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.s-hotel{color:var(--text2);font-size:12px;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+.s-importe{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap;flex-shrink:0;min-width:90px;text-align:right}
+.s-badge{font-size:10px;padding:3px 9px;border-radius:20px;font-weight:700;text-transform:uppercase;white-space:nowrap;flex-shrink:0;background:var(--surface3);color:var(--text2)}
+.s-badge.ok{background:rgba(15,157,88,.15);color:var(--green)}
+.s-badge.bad{background:rgba(220,38,38,.15);color:var(--red)}
+.ficha-body{padding:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px 24px;background:var(--surface2)}
+.campo{display:flex;flex-direction:column;gap:2px;min-width:0}
+.campo label{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:700}
+.campo span{font-size:13px;color:var(--text);word-break:break-word}
 .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 24px;color:var(--text3);font-size:13px;gap:10px}
 .empty-state-icon{font-size:32px;opacity:.35}
 .spinner{width:22px;height:22px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--accent2);animation:spin .7s linear infinite}
@@ -100,20 +110,17 @@ td.mono{font-family:monospace;font-size:11px}
       <input type="date" id="inputHasta" onchange="onFiltroChange()" aria-label="Fecha hasta">
       <button class="btn-clear-fecha" id="btnClearFecha" onclick="limpiarFechas()" style="display:none" title="Quitar filtro de fechas" aria-label="Quitar filtro de fechas">✕</button>
     </div>
+    <div class="sort-row">
+      <select id="selSort" onchange="onSortChange()" aria-label="Ordenar por"></select>
+      <button class="btn-icon" id="btnDir" onclick="toggleDir()" title="Invertir orden">↓</button>
+    </div>
     <div class="toolbar-spacer"></div>
     <span class="toolbar-info" id="toolbarInfo"></span>
     <button class="btn" onclick="exportarCSV()">⬇ Exportar CSV</button>
   </div>
 
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr id="theadRow"></tr>
-      </thead>
-      <tbody id="tbody">
-        <tr><td colspan="25"><div class="empty-state"><div class="spinner"></div>Cargando...</div></td></tr>
-      </tbody>
-    </table>
+  <div class="lista" id="lista">
+    <div class="empty-state"><div class="spinner"></div>Cargando...</div>
   </div>
   <div class="footer-bar" id="footerBar"></div>
 </main>
@@ -173,8 +180,8 @@ const COLUMNAS=[
   {key:'updated_at',     label:'Fecha fin', type:'datetime'},
 ];
 
-document.getElementById('theadRow').innerHTML = COLUMNAS.map(c =>
-  `<th class="${c.sort?'':'no-sort'}" ${c.sort?`data-sort="${c.sort}"`:''}>${esc(c.label)} ${c.sort?'<span class="arrow"></span>':''}</th>`
+document.getElementById('selSort').innerHTML = COLUMNAS.filter(c=>c.sort).map(c=>
+  `<option value="${c.sort}">${esc(c.label)}</option>`
 ).join('');
 
 let items=[], offset=0, total=0, busqueda='', desde='', hasta='', sort='created_at', dir='desc', buscarTimer=null;
@@ -201,17 +208,8 @@ async function cargar(reset=true){
   items = reset ? page : items.concat(page);
   total=t;
   document.getElementById('toolbarInfo').innerHTML=total>0?`<strong>${total}</strong> registros`:'';
-  renderTabla();
+  renderLista();
   renderFooter();
-  renderCabeceras();
-}
-
-function renderCabeceras(){
-  document.querySelectorAll('th[data-sort]').forEach(th=>{
-    const arrow=th.querySelector('.arrow');
-    if(th.dataset.sort===sort){ th.classList.add('sorted'); arrow.textContent=dir==='asc'?'↑':'↓'; }
-    else{ th.classList.remove('sorted'); arrow.textContent=''; }
-  });
 }
 
 function renderFooter(){
@@ -220,14 +218,35 @@ function renderFooter(){
 }
 function cargarMas(){offset+=PAGE;cargar(false);}
 
-function renderTabla(){
-  const tbody=document.getElementById('tbody');
+function badgeClase(estadoFinal){
+  const s=(estadoFinal||'').toLowerCase();
+  if(s.includes('rechaz')) return 'bad';
+  if(s.includes('aprob')||s.includes('archiv')) return 'ok';
+  return '';
+}
+
+function renderLista(){
+  const lista=document.getElementById('lista');
   if(!items.length){
     const filtrando=busqueda||desde||hasta;
-    tbody.innerHTML=`<tr><td colspan="${COLUMNAS.length}"><div class="empty-state"><div class="empty-state-icon">${filtrando?'⌕':'📄'}</div>${filtrando?'Ningún resultado con estos filtros':'No hay registros'}</div></td></tr>`;
+    lista.innerHTML=`<div class="empty-state"><div class="empty-state-icon">${filtrando?'⌕':'📄'}</div>${filtrando?'Ningún resultado con estos filtros':'No hay registros'}</div>`;
     return;
   }
-  tbody.innerHTML=items.map(f=>`<tr>${COLUMNAS.map(c=>`<td class="${c.type==='importe'?'num':''}${c.key==='factura_numero'?' mono':''}">${fmtCelda(f,c)}</td>`).join('')}</tr>`).join('');
+  lista.innerHTML=items.map(f=>`
+    <details class="ficha">
+      <summary>
+        <span class="s-fecha">${fmtDateTime(f.created_at)}</span>
+        <span class="s-num">${esc(f.factura_numero)||'—'}</span>
+        <span class="s-proveedor">${esc(f.proveedor_nombre)||'—'}</span>
+        <span class="s-hotel">${esc(f.hotel_destino_factura)||'—'}</span>
+        <span class="s-importe">${fmtImporte(f.importe_total)}</span>
+        <span class="s-badge ${badgeClase(f.estado_final)}">${esc(f.estado_final)||'—'}</span>
+      </summary>
+      <div class="ficha-body">
+        ${COLUMNAS.map(c=>`<div class="campo"><label>${esc(c.label)}</label><span>${fmtCelda(f,c)}</span></div>`).join('')}
+      </div>
+    </details>
+  `).join('');
 }
 
 function onFiltroChange(){
@@ -248,14 +267,16 @@ function limpiarFechas(){
   cargar();
 }
 
-document.getElementById('theadRow').querySelectorAll('th[data-sort]').forEach(th=>{
-  th.addEventListener('click',()=>{
-    const col=th.dataset.sort;
-    if(sort===col) dir = dir==='asc' ? 'desc' : 'asc';
-    else { sort=col; dir = col==='proveedor_nombre'||col==='factura_numero' ? 'asc' : 'desc'; }
-    cargar();
-  });
-});
+document.getElementById('selSort').value=sort;
+function onSortChange(){
+  sort=document.getElementById('selSort').value;
+  cargar();
+}
+function toggleDir(){
+  dir = dir==='asc' ? 'desc' : 'asc';
+  document.getElementById('btnDir').textContent = dir==='asc' ? '↑' : '↓';
+  cargar();
+}
 
 async function exportarCSV(){
   const params=new URLSearchParams({offset:0,limit:1000,sort,dir});
