@@ -154,6 +154,7 @@ function fmtDateTime(dt){if(!dt)return'—';return new Date(dt).toLocaleString('
 // que el backend sabe ordenar (whitelist en getFacturas.SORT_COLS).
 const COLUMNAS=[
   {key:'created_at',    label:'Fecha recepción', sort:'created_at', type:'datetime'},
+  {key:'estado',        label:'Estado revisión', sort:'estado'},
   {key:'hotel_destino_factura',   label:'Hotel destino'},
   {key:'sociedad_destino_factura',label:'Sociedad destino'},
   {key:'email_remitente', label:'Email remitente'},
@@ -218,8 +219,8 @@ function renderFooter(){
 }
 function cargarMas(){offset+=PAGE;cargar(false);}
 
-function badgeClase(estadoFinal){
-  const s=(estadoFinal||'').toLowerCase();
+function badgeClase(texto){
+  const s=(texto||'').toLowerCase();
   if(s.includes('rechaz')) return 'bad';
   if(s.includes('aprob')||s.includes('archiv')) return 'ok';
   return '';
@@ -232,21 +233,24 @@ function renderLista(){
     lista.innerHTML=`<div class="empty-state"><div class="empty-state-icon">${filtrando?'⌕':'📄'}</div>${filtrando?'Ningún resultado con estos filtros':'No hay registros'}</div>`;
     return;
   }
-  lista.innerHTML=items.map(f=>`
+  lista.innerHTML=items.map(f=>{
+    const estadoTexto=f.estado_final||f.estado;
+    const hotelTexto=f.hotel_destino_factura||f.hotel_nombre_odoo;
+    return `
     <details class="ficha">
       <summary>
         <span class="s-fecha">${fmtDateTime(f.created_at)}</span>
         <span class="s-num">${esc(f.factura_numero)||'—'}</span>
         <span class="s-proveedor">${esc(f.proveedor_nombre)||'—'}</span>
-        <span class="s-hotel">${esc(f.hotel_destino_factura)||'—'}</span>
+        <span class="s-hotel">${esc(hotelTexto)||'—'}</span>
         <span class="s-importe">${fmtImporte(f.importe_total)}</span>
-        <span class="s-badge ${badgeClase(f.estado_final)}">${esc(f.estado_final)||'—'}</span>
+        <span class="s-badge ${badgeClase(estadoTexto)}">${esc(estadoTexto)||'—'}</span>
       </summary>
       <div class="ficha-body">
         ${COLUMNAS.map(c=>`<div class="campo"><label>${esc(c.label)}</label><span>${fmtCelda(f,c)}</span></div>`).join('')}
       </div>
     </details>
-  `).join('');
+  `;}).join('');
 }
 
 function onFiltroChange(){
