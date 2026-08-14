@@ -53,6 +53,9 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;padding:20px 24px
 .toolbar-info{font-size:12px;color:var(--text2);white-space:nowrap}
 .toolbar-info strong{color:var(--text)}
 .btn{padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--text);transition:all .15s}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.pager{display:flex;align-items:center;gap:14px}
+.pager-info{font-size:12px;color:var(--text2)}
 .btn:hover{border-color:var(--text3);background:var(--surface3)}
 .sort-row{display:flex;align-items:center;gap:6px}
 .sort-row select{padding:7px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;outline:none}
@@ -186,7 +189,7 @@ document.getElementById('selSort').innerHTML = COLUMNAS.filter(c=>c.sort).map(c=
   `<option value="${c.sort}">${esc(c.label)}</option>`
 ).join('');
 
-let items=[], offset=0, total=0, busqueda='', desde='', hasta='', sort='created_at', dir='desc', buscarTimer=null;
+let items=[], pagina=0, total=0, busqueda='', desde='', hasta='', sort='created_at', dir='desc', buscarTimer=null;
 const PAGE=150;
 
 function fmtCelda(f,c){
@@ -198,16 +201,16 @@ function fmtCelda(f,c){
 }
 
 let reqId=0;
-async function cargar(reset=true){
-  if(reset) offset=0;
-  const params=new URLSearchParams({offset,limit:PAGE,sort,dir});
+async function cargar(resetPagina=true){
+  if(resetPagina) pagina=0;
+  const params=new URLSearchParams({offset:pagina*PAGE,limit:PAGE,sort,dir});
   if(busqueda) params.set('q',busqueda);
   if(desde) params.set('desde',desde);
   if(hasta) params.set('hasta',hasta);
   const id=++reqId;
   const {items:page,total:t}=await fetch(`/api/facturas?${params}`).then(r=>r.json()).catch(()=>({items:[],total:0}));
   if(id!==reqId) return;
-  items = reset ? page : items.concat(page);
+  items=page;
   total=t;
   document.getElementById('toolbarInfo').innerHTML=total>0?`<strong>${total}</strong> registros`:'';
   renderLista();
@@ -216,9 +219,19 @@ async function cargar(reset=true){
 
 function renderFooter(){
   const el=document.getElementById('footerBar');
-  el.innerHTML = items.length<total ? `<button class="btn" onclick="cargarMas()">Cargar más (${items.length}/${total})</button>` : '';
+  const totalPaginas=Math.max(1,Math.ceil(total/PAGE));
+  if(total<=PAGE){ el.innerHTML=''; return; }
+  el.innerHTML=`<div class="pager">
+    <button class="btn" ${pagina===0?'disabled':''} onclick="irPagina(${pagina-1})">← Anterior</button>
+    <span class="pager-info">Página ${pagina+1} de ${totalPaginas}</span>
+    <button class="btn" ${pagina+1>=totalPaginas?'disabled':''} onclick="irPagina(${pagina+1})">Siguiente →</button>
+  </div>`;
 }
-function cargarMas(){offset+=PAGE;cargar(false);}
+function irPagina(p){
+  pagina=p;
+  document.getElementById('lista').scrollTop=0;
+  cargar(false);
+}
 
 function badgeClase(texto){
   const s=(texto||'').toLowerCase();

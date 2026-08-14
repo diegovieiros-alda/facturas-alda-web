@@ -65,6 +65,9 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;padding:20px 24px
 .toolbar-info{font-size:12px;color:var(--text2);white-space:nowrap}
 .toolbar-info strong{color:var(--text)}
 .btn{padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--text);transition:all .15s}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.pager{display:flex;align-items:center;gap:14px}
+.pager-info{font-size:12px;color:var(--text2)}
 .btn:hover{border-color:var(--text3);background:var(--surface3)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .table-wrap{flex:1;overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-sm);min-height:0}
@@ -201,7 +204,7 @@ function fmtFecha(f){const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(f||'');return m?`${
 function fmtImporte(n){return n?Number(n).toLocaleString('es-ES',{minimumFractionDigits:2})+' €':'—';}
 function fmtDateTime(dt){if(!dt)return'—';return new Date(dt).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}
 
-let items=[], offset=0, total=0, busqueda='', desde='', hasta='', sort='factura_fecha', dir='desc', buscarTimer=null, expandedId=null;
+let items=[], pagina=0, total=0, busqueda='', desde='', hasta='', sort='factura_fecha', dir='desc', buscarTimer=null, expandedId=null;
 const PAGE=100;
 
 function primerDiaMes(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;}
@@ -214,9 +217,9 @@ async function cargarFiltros(){
 }
 
 let reqId=0;
-async function cargar(reset=true){
-  if(reset) offset=0;
-  const params=new URLSearchParams({offset,limit:PAGE,sort,dir});
+async function cargar(resetPagina=true){
+  if(resetPagina) pagina=0;
+  const params=new URLSearchParams({offset:pagina*PAGE,limit:PAGE,sort,dir});
   const estado=document.getElementById('selEstado').value;
   const hotel=document.getElementById('selHotel').value;
   const sociedad=document.getElementById('selSociedad').value;
@@ -229,7 +232,7 @@ async function cargar(reset=true){
   const id=++reqId;
   const {items:page,total:t,totalImporte}=await fetch(`/api/facturas?${params}`).then(r=>r.json()).catch(()=>({items:[],total:0,totalImporte:0}));
   if(id!==reqId) return;
-  items = reset ? page : items.concat(page);
+  items=page;
   total=t;
   document.getElementById('toolbarInfo').innerHTML=total>0?`<strong>${total}</strong> facturas · <strong>${fmtImporte(totalImporte)}</strong>`:'';
   renderTabla();
@@ -247,9 +250,19 @@ function renderCabeceras(){
 
 function renderFooter(){
   const el=document.getElementById('footerBar');
-  el.innerHTML = items.length<total ? `<button class="btn" onclick="cargarMas()">Cargar más (${items.length}/${total})</button>` : '';
+  const totalPaginas=Math.max(1,Math.ceil(total/PAGE));
+  if(total<=PAGE){ el.innerHTML=''; return; }
+  el.innerHTML=`<div class="pager">
+    <button class="btn" ${pagina===0?'disabled':''} onclick="irPagina(${pagina-1})">← Anterior</button>
+    <span class="pager-info">Página ${pagina+1} de ${totalPaginas}</span>
+    <button class="btn" ${pagina+1>=totalPaginas?'disabled':''} onclick="irPagina(${pagina+1})">Siguiente →</button>
+  </div>`;
 }
-function cargarMas(){offset+=PAGE;cargar(false);}
+function irPagina(p){
+  pagina=p;
+  document.querySelector('.table-wrap').scrollTop=0;
+  cargar(false);
+}
 
 function renderTabla(){
   const tbody=document.getElementById('tbody');
