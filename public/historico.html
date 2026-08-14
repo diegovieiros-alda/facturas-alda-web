@@ -35,7 +35,7 @@
   --pdf-bg:#222;
   --shadow-sm:0 1px 2px rgba(0,0,0,.25);--shadow-md:0 20px 60px rgba(0,0,0,.5);
 }
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
 ::-webkit-scrollbar{width:9px;height:9px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:20px;border:2px solid var(--bg)}
@@ -49,7 +49,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .header-right{display:flex;align-items:center;gap:12px}
 .btn-icon{background:none;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px;transition:all .15s}
 .btn-icon:hover{border-color:var(--text3);color:var(--text);background:var(--surface2)}
-main{flex:1;overflow:hidden;display:flex;flex-direction:column;padding:20px 24px;gap:14px}
+main{flex:1;overflow:hidden;display:flex;flex-direction:column;padding:20px 24px;gap:14px;min-height:0}
 .toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .toolbar select,.toolbar input[type=text],.toolbar input[type=search]{padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none}
 .toolbar select:focus,.toolbar input:focus{border-color:var(--accent)}
@@ -67,7 +67,7 @@ main{flex:1;overflow:hidden;display:flex;flex-direction:column;padding:20px 24px
 .btn{padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--text);transition:all .15s}
 .btn:hover{border-color:var(--text3);background:var(--surface3)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
-.table-wrap{flex:1;overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-sm)}
+.table-wrap{flex:1;overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-sm);min-height:0}
 table{width:100%;border-collapse:collapse;font-size:13px}
 thead th{position:sticky;top:0;background:var(--surface2);text-align:left;padding:10px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-weight:700;cursor:pointer;user-select:none;border-bottom:1px solid var(--border);white-space:nowrap;z-index:1}
 thead th:hover{color:var(--text)}
