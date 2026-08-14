@@ -57,8 +57,8 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .user-badge{font-size:12px;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 12px}
 .btn-icon{background:none;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px;transition:all .15s}
 .btn-icon:hover{border-color:var(--text3);color:var(--text);background:var(--surface2)}
-.layout{display:flex;flex:1;overflow:hidden;height:calc(100vh - 56px)}
-.sidebar{width:340px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;background:var(--surface)}
+.layout{display:flex;flex:1;overflow:hidden;height:calc(100vh - 56px);min-height:0}
+.sidebar{width:340px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;background:var(--surface);min-height:0}
 .sidebar-header{padding:16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .sidebar-title{font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.8px}
 .badge-count{background:var(--accent);color:#fff;border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;transition:transform .15s}
@@ -81,7 +81,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .btn-clear-fecha:hover{color:var(--text);border-color:var(--text3)}
 .sum-importe{font-size:11px;color:var(--text3);text-align:right}
 .sum-importe:not(:empty)::before{content:'Suma: '}
-.factura-list{overflow-y:auto;flex:1}
+.factura-list{overflow-y:auto;flex:1;min-height:0}
 .pager{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-top:1px solid var(--border);flex-shrink:0;font-size:12px}
 .pager button{background:none;border:1px solid var(--border);color:var(--text2);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px;transition:all .15s}
 .pager button:hover:not(:disabled){border-color:var(--text3);color:var(--text);background:var(--surface2)}
@@ -112,7 +112,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:0
 .empty-state-icon{font-size:32px;opacity:.35}
 .spinner{width:22px;height:22px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--accent2);animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.detail{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.detail{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0}
 @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 .detail-empty{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--text3)}
 .detail-empty-icon{font-size:48px;opacity:.25}
