@@ -29,13 +29,16 @@ const LOG_HTML = readHtml('log.html');
 // express-session con MemoryStore (el default) pierde todas las sesiones en cada
 // cold start de Vercel — el usuario se veía deslogueado sin motivo aparente.
 // Store mínimo respaldado en la tabla `sesiones` de Supabase (ver src/db.js).
+// cb es opcional según la interfaz Store de express-session (algunas llamadas internas
+// no lo pasan) — invocarlo sin comprobar tumbó el proceso entero una vez en producción
+// ("cb is not a function") al destruir una sesión sin callback.
 class SupabaseSessionStore extends session.Store {
-  get(sid, cb) { sesionesGet(sid).then(sess => cb(null, sess)).catch(cb); }
+  get(sid, cb) { sesionesGet(sid).then(sess => cb && cb(null, sess)).catch(err => cb && cb(err)); }
   set(sid, sess, cb) {
     const expire = new Date(Date.now() + (sess.cookie?.maxAge ?? SESSION_MAX_AGE));
-    sesionesSet(sid, sess, expire).then(() => cb(null)).catch(cb);
+    sesionesSet(sid, sess, expire).then(() => cb && cb(null)).catch(err => cb && cb(err));
   }
-  destroy(sid, cb) { sesionesDestroy(sid).then(() => cb(null)).catch(cb); }
+  destroy(sid, cb) { sesionesDestroy(sid).then(() => cb && cb(null)).catch(err => cb && cb(err)); }
   touch(sid, sess, cb) { this.set(sid, sess, cb); }
 }
 
