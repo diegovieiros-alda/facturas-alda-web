@@ -176,14 +176,42 @@ app.post('/api/webhook/factura', requirePortalToken, async (req, res) => {
   }
 });
 
+// n8n manda fecha_docuware como texto en formato es-ES ("18/8/2026, 8:17:49", salida típica
+// de toLocaleString('es-ES')) en vez de ISO — Postgres no puede parsear eso como timestamptz
+// y el driver lo lanza como excepción no capturada más abajo. Se reescribe a ISO si el
+// formato es reconocible; si no, se descarta (null) en vez de tumbar el proceso entero.
+function parseFechaFlexible(s) {
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s; // ya es ISO, Postgres lo entiende tal cual
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s+(\d{1,2}):(\d{2}):(\d{2})$/.exec(s.trim());
+  if (m) {
+    const [, d, mo, y, h, mi, se] = m;
+    const dt = new Date(`${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}T${h.padStart(2, '0')}:${mi}:${se}`);
+    if (!isNaN(dt)) return dt.toISOString();
+  }
+  console.warn('fecha_docuware con formato no reconocido, se ignora:', s);
+  return null;
+}
+
 // Segunda notificación de n8n, disparada tras Prep_Sheet_Centros (ya con el resultado
 // real de DocuWare) para la rama de auto-archivado — no lleva token, se correlaciona
 // por id_transaccion, que ya viaja en el webhook inicial de arriba.
 app.post('/api/webhook/factura-archivada', requirePortalToken, async (req, res) => {
-  const { id_transaccion, resultado_docuware, fecha_docuware, estado_final, carpeta_imap } = req.body;
-  if (!id_transaccion) return res.status(400).json({ error: 'Falta id_transaccion' });
-  await queries.updateArchivado.run({ id_transaccion, resultado_docuware, fecha_docuware, estado_final, carpeta_imap });
-  res.json({ ok: true });
+  try {
+    const { id_transaccion, resultado_docuware, fecha_docuware, estado_final, carpeta_imap } = req.body;
+    if (!id_transaccion) return res.status(400).json({ error: 'Falta id_transaccion' });
+    await queries.updateArchivado.run({
+      id_transaccion, resultado_docuware, estado_final, carpeta_imap,
+      fecha_docuware: parseFechaFlexible(fecha_docuware),
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    // Antes esto tumbaba el proceso entero (excepción no capturada en una promesa async de
+    // Express) cada vez que llegaba un dato inesperado — un solo webhook mal formado podía
+    // dejar el portal caído en bucle de reinicios en vez de fallar solo esa notificación.
+    console.error('Webhook factura-archivada error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── API Facturas ──────────────────────────────────────────────────────────────
